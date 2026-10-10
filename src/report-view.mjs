@@ -19,6 +19,7 @@ export function terminalReport(s, { color = false } = {}) {
     row('Route reuse', `${percent(s.efficiency.reusePercent)}  (${s.efficiency.reusedRequests}/${s.efficiency.automaticRequests} automatic requests)`),
     '', muted('  ACTIVITY'),
     row('Jev calls / failures', `${number(s.jevRequests)} / ${number(s.jevFailed)}`),
+    row('Skipped Jev calls', number(s.jevSkipped)),
     row('Model / effort changes', `${number(s.modelChanges)} / ${number(s.effortChanges)}`),
     row('Completed responses', `${number(s.completed)} / ${number(s.inferenceResponses)}`),
     row('Locally rated decisions', `${number(s.feedback.ratedDecisions)} / ${number(s.feedback.totalDecisions)}`),

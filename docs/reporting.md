@@ -6,6 +6,7 @@ Reports stay on the user's computer. There is no central database, telemetry, sh
 
 - **Jev requests:** actual outbound classification HTTP attempts, not the number of provider requests. Pilot makes one attempt per classified user turn, with duplicate requests sharing an in-flight decision. It has no classifier retry loop.
 - **Jev successes/failures:** valid answers versus HTTP, network, timeout or invalid-answer failures. Interrupted calls can remain unfinished.
+- **Skipped classifier calls:** circuit cooldown, exhausted per-run budget or an already-cancelled request. These make no classification request and do not inflate Jev attempts, failures, unfinished calls or cost coverage. A failed request that actually ran can still have unknown cost.
 - **Routing decisions:** new user turns handled by Pilot, including confirmations and secret/no-key holds that do not call Jev.
 - **Selected model/effort changes:** differences from the previous automatic selection in that in-memory session. The first selection is not counted as a change. These do not prove the provider honored the effort or successfully served the next request.
 - **Observed served-model changes:** differences between successive reported response models within a run/session, counted independently from selection attempts. Responses without a reported model cannot establish a change.
@@ -33,6 +34,16 @@ The dashboard offers English/Korean/Japanese/Chinese, model and token compositio
 
 The activity table separates the original Jev tier/effort recommendation from the applied model/effort. Expand a recommendation using mouse, keyboard or touch to see the two reported confidence values, optional selected-option probabilities and margins, risk flag and rubric version. Old records stay unknown. Confidence and option probability are different statistics; neither is a calibrated probability that the coding task will succeed. The existing confidence gate is configurable and has not been optimized on a held-out workload.
 
+Expand **Selection rules** for the effective policy snapshot and ordered model scope, confidence, risk/failure, cache, effort and visual rules. Intermediate positions are policy evaluation steps, not separately executed model requests. A decision's linked provider-reported model names are shown separately. This is the provider's identifier, not independent verification of its internal weights. Older records without IDs or receipts stay unknown rather than being linked by a guessed timestamp.
+
+**Rate this selection** displays a local command with that exact decision ID. Copy it to another terminal and choose the rating you intend; the dashboard never executes the command. For example:
+
+```sh
+jev-pilot feedback too-weak --decision <decision-id> --agent codex
+```
+
+An ID must match exactly one valid decision. Unknown, duplicate, malformed or wrong-tool IDs fail without falling back to the newest decision. IDs and snapshots are metadata and are included in aggregate exports; review them before sharing.
+
 After reviewing the latest routed turn, optionally run in another terminal:
 
 ```sh
@@ -41,9 +52,11 @@ jev-pilot feedback too-weak --agent codex
 jev-pilot feedback rework --agent claude
 ```
 
-Ratings are `right`, `too-weak`, `too-strong`, `too-slow`, `rework`. The target is the latest decision for that tool across **all local projects and runs**, not the terminal's current directory. Check the model and timestamp printed by the command. Omit `--agent` only when the newest decision across both tools is intended. Ambiguous latest runs, unreadable logs or unknown options are rejected before recording. Record immediately after reviewing the intended turn; concurrent sessions can create a newer decision.
+Ratings are `right`, `too-weak`, `too-strong`, `too-slow`, `rework`. Without `--decision`, the target is the latest decision for that tool across **all local projects and runs**, not the terminal's current directory. Check the model and timestamp printed by the command. Omit `--agent` only when the newest decision across both tools is intended. Ambiguous latest runs, unreadable logs or unknown options are rejected before recording. Prefer the exact decision command when concurrent sessions can create a newer decision.
 
 Feedback creates an owner-only metadata event linked to the decision, without editing its source log. Corrections count only the latest rating for each decision. Reports include feedback only for decisions selected by the report's tool/date/run filters; later feedback remains associated with the original decision date. Feedback files do not inflate runs, periods, requests or costs. These voluntary ratings have selection bias and are not task-success measurements. Pilot does not automatically retrain or change routing from them.
+
+New response records include `decisionId`, `ms`, `firstByteMs` (from local request start, including routing) and `providerFirstByteMs` (from provider fetch start). The first body chunk can contain a heartbeat or other non-token data; these fields do not measure first generated token or whole-task time. No body means unknown first-byte time. Use the [paired-task record](validation.md) to track actual completion, review and rework separately.
 
 ## Configure prices
 

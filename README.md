@@ -29,10 +29,16 @@ The question is not just “which model?” It is **“did it switch, why did it
 - A warm, long conversation can hold a downgrade, but repeated confident cheap decisions release it. Sessions do not ratchet upward forever.
 - Local reports show Jev requests/failures, selected model and effort changes, served models, cache tokens and estimate coverage.
 - Choose exactly which models automatic routing may use, per launch or project. Reasoning effort remains independent.
+- Inspect the policy and ordered rules applied to each choice, then target that exact decision with local feedback.
+- Repeated classifier failures pause new calls temporarily; an optional per-run call limit bounds classification attempts.
 - Shadow mode records suggestions while keeping the session's default route.
 - No runtime dependencies, background daemon, account service or automatic telemetry.
 
 **Experimental alpha.** There is no measured subscription-quota saving or long-session quality benchmark yet. Reports compare API-equivalent prices on observed tokens; they do not claim a smaller subscription bill. See [limitations](docs/compatibility.md).
+
+![Jev Pilot report preview with model scope, cost estimate and recorded usage coverage](examples/report-preview.png)
+
+Synthetic demo with invented prices; the displayed percentage is not measured savings. [Open the offline demo](examples/demo-report.html) or inspect [how estimates are calculated](docs/reporting.md).
 
 ## Install and verify
 
@@ -41,7 +47,7 @@ Needs Node.js **22+**, a working `codex` and/or `claude` on PATH, and its existi
 Pinned release package (no permanent source checkout needed):
 
 ```sh
-npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.3/sunulab-jev-pilot-0.1.0-alpha.3.tgz
+npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.4/sunulab-jev-pilot-0.1.0-alpha.4.tgz
 jev-pilot verify
 ```
 
@@ -131,6 +137,15 @@ Dates use UTC. Output files are created exclusively; existing files are preserve
 | Cache-read share, route reuse, uncached input, cache writes and output | No subscription-quota or task-quality claim |
 
 Missing prices/usage stay unavailable. Negative differences remain visible. [Configure prices and understand the baseline](docs/reporting.md).
+
+Expand **Selection rules** to see recommendation → applied constraints → final choice and linked provider-reported models. **Rate this selection** reveals a command targeting that exact decision, even when several projects are running:
+
+```sh
+jev-pilot feedback too-weak --decision <decision-id> --agent codex
+pilot-codex --no-jev --models sol  # observe one run without external classification
+```
+
+The report only displays commands; it does not execute them or upload feedback. `--no-jev` leaves saved settings intact. [Failure handling and optional call limits](docs/configuration.md#classifier-availability-and-request-limits).
 
 Try the interface without keys or calls:
 

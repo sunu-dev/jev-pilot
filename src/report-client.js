@@ -25,6 +25,53 @@ Object.assign(copy.en,{confidenceNote:'Classification scores are not calibrated 
 Object.assign(copy.ko,{confidenceNote:'분류 점수는 작업 성공 확률로 보정된 값이 아닙니다.',riskLabel:'민감 변경 판단 / 확신도',rubricLabel:'분류 기준 버전'});
 Object.assign(copy.ja,{confidenceNote:'分類スコアは作業成功確率として校正されていません。',riskLabel:'機微な変更の判定 / 確信度',rubricLabel:'分類基準の版'});
 Object.assign(copy.zh,{confidenceNote:'分类分数未经任务成功概率校准。',riskLabel:'敏感变更判断 / 置信度',rubricLabel:'分类标准版本'});
+const receiptWords = {
+  en: {traceTitle:'Selection rules',policySettings:'Policy at this decision',receivedModels:'Provider-reported models',responseCount:'Linked responses',feedbackCommand:'Rate this selection',noReceipt:'Not recorded in older sessions',effortCeiling:'Effort ceiling',confidenceFloor:'Confidence threshold',cacheSettings:'Warm tokens / idle minutes / downgrade decisions',classifierSettings:'Failure threshold / cooldown seconds / call limit',unlimited:'Unlimited',jevSkipped:'Skipped classifier calls',feedbackHelp:'Expand a selection to copy its exact feedback command. Commands record feedback locally; they do not retrain the router.'},
+  ko: {traceTitle:'선택 규칙 보기',policySettings:'이 선택에 적용된 설정',receivedModels:'공급자가 보고한 모델',responseCount:'연결된 응답',feedbackCommand:'이 선택 평가하기',noReceipt:'이전 세션에는 기록이 없습니다',effortCeiling:'추론 강도 상한',confidenceFloor:'확신도 기준',cacheSettings:'캐시 유지 기준: 토큰 / 유휴 분 / 하향 횟수',classifierSettings:'연속 실패 기준 / 쉬는 초 / 호출 상한',unlimited:'무제한',jevSkipped:'건너뛴 분류 호출',feedbackHelp:'선택 기록에서 평가 명령을 펼쳐 복사하세요. 해당 선택에만 로컬 평가를 남기며 자동 학습하지 않습니다.'},
+  ja: {traceTitle:'選択ルール',policySettings:'この選択の設定',receivedModels:'プロバイダー報告モデル',responseCount:'関連する応答',feedbackCommand:'この選択を評価',noReceipt:'以前のセッションには記録がありません',effortCeiling:'推論強度の上限',confidenceFloor:'確信度の基準',cacheSettings:'キャッシュ基準: トークン / 待機分 / 引き下げ回数',classifierSettings:'連続失敗 / 休止秒 / 呼び出し上限',unlimited:'無制限',jevSkipped:'省略した分類呼び出し',feedbackHelp:'選択履歴で評価コマンドを開いてコピーします。該当する選択の評価をローカルに保存し、自動学習には使いません。'},
+  zh: {traceTitle:'查看选择规则',policySettings:'本次选择的配置',receivedModels:'供应商报告的模型',responseCount:'关联响应',feedbackCommand:'评价本次选择',noReceipt:'旧会话未记录',effortCeiling:'推理强度上限',confidenceFloor:'置信度阈值',cacheSettings:'缓存条件：Token / 空闲分钟 / 降档次数',classifierSettings:'连续失败阈值 / 暂停秒数 / 调用上限',unlimited:'不限',jevSkipped:'跳过的分类调用',feedbackHelp:'展开选择记录并复制对应评价命令。评价仅针对该选择保存在本地，不会自动训练路由器。'},
+};
+const ruleLabels = {
+  'jev-recommendation':['Jev recommendation','Jev 원래 추천','Jevの推奨','Jev 原始推荐'],
+  'explicit-choice':['Explicit choice','직접 지정','明示的な選択','显式选择'],
+  'tier-minimum':['Minimum capability','최소 모델 등급','能力の下限','最低能力'],
+  'tier-maximum':['Maximum capability','최대 모델 등급','能力の上限','最高能力'],
+  'model-scope':['Allowed models','허용한 모델 범위','許可モデル','允许模型范围'],
+  'capability-confidence-hold':['Uncertain model held','낮은 모델 확신으로 유지','モデルの確信度不足で維持','模型置信度不足，保持'],
+  'effort-confidence-hold':['Uncertain effort held','낮은 추론 확신으로 유지','推論の確信度不足で維持','推理置信度不足，保持'],
+  'sensitive-work-floor':['Sensitive-work minimum','민감 작업 최소 기준','機微な作業の下限','敏感任务下限'],
+  'previous-failure-floor':['Escalate after failure','이전 실패 후 상향','前回失敗による引き上げ','失败后提升'],
+  'cache-hold':['Preserve warm cache','기존 캐시 유지','キャッシュ維持','保持热缓存'],
+  'cache-bypass':['Explicit choice skips cache hold','직접 지정으로 캐시 유지 생략','明示選択でキャッシュ維持を省略','显式选择跳过缓存保持'],
+  'sustained-downgrade':['Downgrade hold released','하향 보류 해제','引き下げ保留を解除','解除降档保留'],
+  'effort-ceiling':['Effort ceiling','추론 강도 상한','推論強度の上限','推理强度上限'],
+  'model-effort-support':['Supported effort','모델이 지원하는 추론 강도','対応する推論強度','模型支持的推理强度'],
+  'visual-floor':['Image-task minimum','이미지 작업 최소 기준','画像作業の下限','图像任务下限'],
+  'fallback-current':['Keep current route','현재 선택 유지','現在の選択を維持','保持当前路由'],
+  'fallback-default':['Use default route','기본 선택 사용','既定の選択','使用默认路由'],
+  'confirmation-hold':['Continue prior task','이전 작업 계속','前の作業を継続','继续先前任务'],
+  'secret-not-sent':['Sensitive text withheld','민감 문구 전송 보류','機密テキストを送信しない','敏感文本未发送'],
+  'no-jev-key':['No classifier key','분류 키 없음','分類キーなし','无分类密钥'],
+  'jev-disabled':['Classification disabled','분류를 끈 실행','分類を無効化','分类已关闭'],
+  'jev-circuit-open':['Classifier resting after failures','반복 실패로 분류 잠시 쉬기','連続失敗で分類を休止','连续失败，暂停分类'],
+  'jev-budget-exhausted':['Classifier call limit reached','분류 호출 상한 도달','分類の呼び出し上限','已达到分类调用上限'],
+  'jev-request-aborted':['Classifier request cancelled','분류 요청 취소','分類要求を取消','分类请求已取消'],
+  'user-override':['Trailing model choice','요청 끝의 모델 지정','末尾のモデル指定','末尾指定模型'],
+  'user-override-limited':['Trailing choice limited','직접 지정에 설정 제한 적용','末尾指定に制限を適用','末尾指定受配置限制'],
+  'user-override-unavailable':['Requested model unavailable','요청 모델 사용 불가','指定モデルを利用不可','指定模型不可用'],
+  shadow:['Suggestion only','추천만 기록','推奨のみ','仅记录建议'],
+  result:['Result','최종 선택','最終選択','最终选择'],
+};
+for (const [index, lang] of ['en','ko','ja','zh'].entries()) {
+  Object.assign(copy[lang], receiptWords[lang], {ruleNames:Object.fromEntries(Object.entries(ruleLabels).map(([rule, labels]) => [rule, labels[index]]))});
+  for (const reason of ['jev-disabled','jev-circuit-open','jev-budget-exhausted','jev-request-aborted']) copy[lang].reasons[reason] = ruleLabels[reason][index];
+}
+for (const [index, lang] of ['en','ko','ja','zh'].entries()) copy[lang].traceNote = [
+  'Policy evaluation steps, not separate model calls. The final selection and provider response are shown separately.',
+  '정책 적용 과정이며 모델을 차례로 호출한 기록이 아닙니다. 최종 선택과 공급자 응답 모델을 따로 확인하세요.',
+  '設定の適用過程であり、各モデルを順に呼び出した記録ではありません。最終選択と応答モデルは別に表示します。',
+  '这是配置应用过程，并非依次调用各模型的记录。最终选择与供应商响应模型分别显示。',
+][index];
 let language = ['en','ko','ja','zh'].includes(navigator.language?.split('-')[0]) ? navigator.language.split('-')[0] : 'en';
 const locale = () => ({en:'en-US',ko:'ko-KR',ja:'ja-JP',zh:'zh-CN'})[language];
 const $ = id => document.getElementById(id);
@@ -104,12 +151,24 @@ function render() {
     }else cells[2].textContent='—';
     cells[4].append(element('span','effort-pill',e.effort??'default'));
     const reason=e.shadow?`${word('reasons').shadow} → ${modelName(e.proposedModel)} / ${e.proposedEffort??'default'}`:word('reasons')[e.reason]??e.reason;
-    const pill=element('span','reason-pill'+(e.reason==='jev-unavailable'?' fallback':''),reason);pill.title=e.reason;cells[5].append(pill);cells[6].textContent=e.feedback?word('feedbackRatings')[e.feedback]:'—';cells[7].append(element('span',e.changed?'change-pill':'',e.changed?'↗ '+word('changed'):'—'));row.append(...cells);tbody.append(row);
+    const pill=element('span','reason-pill'+(e.reason==='jev-unavailable'||e.reason?.startsWith('jev-circuit')||e.reason==='jev-budget-exhausted'?' fallback':''),reason);pill.title=e.reason;cells[5].append(pill);
+    const receipt=element('details','route-receipt'),receiptBody=element('div','receipt-body');receipt.append(element('summary','',word('traceTitle')),receiptBody);
+    const routeLabel=route=>route?`${modelName(route.model)} · ${route.effort??'default'}`:'—';
+    receiptBody.append(element('p','microcopy',word('traceNote')));
+    const steps=element('ol','receipt-steps');
+    for(const step of e.policyTrace??[]){const item=element('li');item.append(element('strong','',word('ruleNames')[step.rule]??step.rule));if(step.before||step.after)item.append(element('small','',`${routeLabel(step.before)} → ${routeLabel(step.after)}`));steps.append(item);}
+    receiptBody.append(steps.children.length?steps:element('p','',word('noReceipt')));
+    const settings=e.policySnapshot;
+    if(settings){receiptBody.append(element('strong','',word('policySettings')),element('p','',`${word('scopeTitle')}: ${[...new Set((settings.models??[]).map(model=>modelName(model.model)))].join(' + ')}`),element('p','',`${word('effortCeiling')}: ${settings.maxEffort} · ${word('confidenceFloor')}: ${pct(settings.minConfidence*100)}`));if(settings.cache)receiptBody.append(element('p','',`${word('cacheSettings')}: ${settings.cache.warmTokens} / ${settings.cache.idleMinutes} / ${settings.cache.downgradeAfter}`));if(settings.classifier)receiptBody.append(element('p','',`${word('classifierSettings')}: ${settings.classifier.circuitFailures??'—'} / ${settings.classifier.cooldownSeconds??'—'} / ${settings.classifier.maxRequests??word('unlimited')}`));}
+    receiptBody.append(element('p','',`${word('receivedModels')}: ${(e.servedModels??[]).map(modelName).join(', ')||word('unknown')}`),element('p','',`${word('responseCount')}: ${num(e.observedResponses)}`));cells[5].append(receipt);
+    cells[6].append(element('span','',e.feedback?word('feedbackRatings')[e.feedback]:'—'));
+    if(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(e.decisionId??'')&&['codex','claude'].includes(e.agent)){const control=element('details','feedback-command'),input=element('input');input.readOnly=true;input.value=`jev-pilot feedback too-weak --decision ${e.decisionId} --agent ${e.agent}`;input.setAttribute('aria-label',word('feedbackCommand'));input.addEventListener('click',()=>input.select());control.append(element('summary','',word('feedbackCommand')),input);cells[6].append(control);}
+    cells[7].append(element('span',e.changed?'change-pill':'',e.changed?'↗ '+word('changed'):'—'));row.append(...cells);tbody.append(row);
   }
   text('timeline-note',`${word('timelineTail')} ${num(Math.min(40,s.timeline.length))} ${word('of')} ${num(s.timeline.length)} ${word('decisions')}.`);
   const messages={'no-responses':'noResponses','missing-prices-or-usage':'missingPrices','missing-jev-cost':'missingJev','unfinished-requests':'unfinished','malformed-records':'malformed'};
   text('estimate-status',s.estimates.blockers.length?s.estimates.blockers.map(k=>word(messages[k])).join(' '):word('completeEstimate'));
-  const counters=[['usageReported',pair(s.usageCoverage,s.inferenceResponses)],['jevUsage',pair(s.jevUsageCoverage,s.jevRequests)],['jevInput',num(s.jevInputTokens)],['jevOutput',num(s.jevOutputTokens)],['p95',s.jevLatency.p95===null?'—':num(s.jevLatency.p95)+' ms'],['mismatches',num(s.modelMismatches)],['tokenChecks',num(s.tokenChecks)],['cacheHolds',num(s.cacheHolds)],['unfinishedProvider',num(s.unfinished)],['unfinishedJev',num(s.jevUnfinished)],['providerFailures',num(s.providerFailures)],['malformedCount',num(s.malformed)]];
+  const counters=[['usageReported',pair(s.usageCoverage,s.inferenceResponses)],['jevUsage',pair(s.jevUsageCoverage,s.jevRequests)],['jevSkipped',num(s.jevSkipped)],['jevInput',num(s.jevInputTokens)],['jevOutput',num(s.jevOutputTokens)],['p95',s.jevLatency.p95===null?'—':num(s.jevLatency.p95)+' ms'],['mismatches',num(s.modelMismatches)],['tokenChecks',num(s.tokenChecks)],['cacheHolds',num(s.cacheHolds)],['unfinishedProvider',num(s.unfinished)],['unfinishedJev',num(s.jevUnfinished)],['providerFailures',num(s.providerFailures)],['malformedCount',num(s.malformed)]];
   $('all-counters').replaceChildren();for(const [key,value] of counters){const row=element('div');row.append(element('span','',word(key)),element('b','',value));$('all-counters').append(row);}
 }
 $('agent').addEventListener('change',render);

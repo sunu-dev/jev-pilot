@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+- Run-wide classifier guard: three consecutive failures pause classification for 60 seconds; one recovery probe resumes it. Optional `jevMaxRequests` caps actual classifier attempts across concurrent sessions. Skips remain distinct from paid calls and failures.
+- Effective policy snapshots and ordered decision traces explain model scope, confidence, cache, safety, effort ceilings and model support. The report separates these evaluation steps from provider-reported models.
+- Exact `feedback --decision ID` targeting and per-decision commands in the four-language report. `--no-jev` disables classification for one launch while retaining proxy observations and leaving saved settings intact.
+- Bounded recent-turn routes preserve model, decision ID and generation for late older-turn tool requests and retries. Unmatched tool requests do not inherit a newer decision link or update its state.
+- Response records link to exact decisions and record end-to-end/provider first-body-byte times. These are not first generated-token or whole-task completion measurements.
+- Dedicated misrouting issue form, updated synthetic demo and a paired-task validation record template.
+
+Author smoke verification on 2026-10-10: one real Jev decision and completed subscription response each on Codex CLI 0.162.1 (Luna) and Claude Code 2.1.295 (Haiku), macOS arm64 / Node 24.4.1. Long-session/MCP/resume behavior and independently reviewed task-quality or savings comparisons remain unverified.
+
 ## 0.1.0-alpha.3
 
 - Quality/completeness-aware classification rubric and recent attachment metadata; replaced images with identical text/count trigger fresh decisions without exposing pixels.

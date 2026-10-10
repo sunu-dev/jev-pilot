@@ -12,34 +12,91 @@ export function chooseRoute({ answer, current, policy, models, contextTokens = 0
   const allowed = TIERS.filter(t => rank(t) >= rank(policy.minTier) && rank(t) <= rank(policy.maxTier) && models[t]?.allowed !== false);
   if (!allowed.length) throw new Error('No models are available in the configured scope');
   const clamp = t => allowed.find(a => rank(a) >= rank(t)) ?? allowed.at(-1);
+  const trace = [];
+  const position = (tier, effort) => ({ tier, model: models[tier]?.model ?? null, effort });
+  const snapshot = route => route ? {
+    tier: TIERS.includes(route.tier) ? route.tier : null,
+    model: typeof route.model === 'string' && /^[A-Za-z0-9._-]{1,120}$/.test(route.model) ? route.model : null,
+    effort: EFFORTS.includes(route.effort) ? route.effort : null,
+  } : null;
+  const step = (rule, before, after, details = {}) => trace.push({ rule, before: snapshot(before), after: snapshot(after), details });
+  const number = value => Number.isFinite(value) ? value : null;
+  const scopeStep = (beforeTier, afterTier, effort, stage) => {
+    if (beforeTier === afterTier) return;
+    const rule = rank(beforeTier) < rank(policy.minTier) ? 'tier-minimum' : rank(beforeTier) > rank(policy.maxTier) ? 'tier-maximum' : 'model-scope';
+    step(rule, position(beforeTier, effort), position(afterTier, effort), { stage, minTier: policy.minTier, maxTier: policy.maxTier, allowedTiers: [...allowed] });
+  };
+  const routedEffort = (effort, tier, stage) => {
+    const selected = supportedEffort(effort, models[tier], policy.maxEffort);
+    let intermediate = effort;
+    if (EFFORTS.indexOf(effort) > EFFORTS.indexOf(policy.maxEffort)) {
+      intermediate = policy.maxEffort;
+      step('effort-ceiling', position(tier, effort), position(tier, intermediate), { stage, maxEffort: policy.maxEffort });
+    }
+    if (selected !== intermediate) step('model-effort-support', position(tier, intermediate), position(tier, selected), {
+      stage, supportedEfforts: EFFORTS.filter(e => models[tier].efforts.includes(e)),
+    });
+    return selected;
+  };
+  const finish = route => {
+    step('result', trace.at(-1)?.after ?? null, route, { reason: route.reason });
+    return { ...route, trace };
+  };
+  const previousRejected = Boolean(current && (!allowed.includes(current.tier) || models[current.tier].model !== current.model));
   if (current && (!allowed.includes(current.tier) || models[current.tier].model !== current.model)) current = undefined;
   const defaultTier = clamp(policy.defaultTier);
   const fallback = current ?? { tier: defaultTier, effort: 'medium', model: models[defaultTier].model };
   const visualFloor = route => {
     if (!visual) return route;
-    const tier = clamp(TIERS[Math.max(rank(route.tier), rank(policy.imageMinTier ?? 'strong'))]);
+    const requestedTier = TIERS[Math.max(rank(route.tier), rank(policy.imageMinTier ?? 'strong'))];
+    const tier = clamp(requestedTier);
     const effort = EFFORTS[Math.max(EFFORTS.indexOf(route.effort), EFFORTS.indexOf(policy.imageMinEffort ?? 'high'))];
-    return { ...route, tier, model: models[tier].model, effort: supportedEffort(effort, models[tier], policy.maxEffort),
+    step('visual-floor', route, position(requestedTier, effort), { minTier: policy.imageMinTier ?? 'strong', minEffort: policy.imageMinEffort ?? 'high' });
+    scopeStep(requestedTier, tier, effort, 'visual');
+    return { ...route, tier, model: models[tier].model, effort: routedEffort(effort, tier, 'visual'),
       reason: tier !== route.tier || effort !== route.effort ? 'visual-context' : route.reason };
   };
-  if (!answer?.ok) return visualFloor({ ...fallback, effort: supportedEffort(fallback.effort, models[fallback.tier], policy.maxEffort), reason: 'jev-unavailable', streak: 0 });
+  if (!answer?.ok) {
+    step(current ? 'fallback-current' : 'fallback-default', null, current ?? position(policy.defaultTier, 'medium'), { previousRouteRejected: previousRejected });
+    if (!current) scopeStep(policy.defaultTier, defaultTier, 'medium', 'fallback');
+    return finish(visualFloor({ ...fallback, effort: routedEffort(fallback.effort, fallback.tier, 'fallback'), reason: 'jev-unavailable', streak: 0 }));
+  }
   let tier = clamp(answer.tier), effort = answer.effort, reason = tier !== answer.tier && models[tier].model !== models[answer.tier]?.model ? 'model-limit' : 'jev', nextStreak = 0;
+  step(forced ? 'explicit-choice' : 'jev-recommendation', null, position(answer.tier, effort), { confidence: number(answer.confidence), effortConfidence: number(answer.effortConfidence) });
+  scopeStep(answer.tier, tier, effort, 'recommendation');
   if (answer.confidence < policy.minConfidence) {
+    const before = position(tier, effort);
     tier = fallback.tier;
     reason = 'low-confidence-hold';
+    step('capability-confidence-hold', before, position(tier, effort), { confidence: number(answer.confidence), minConfidence: policy.minConfidence, source: current ? 'current' : 'default' });
   }
-  if (answer.effortConfidence < policy.minConfidence) effort = current?.effort ?? 'medium';
+  if (answer.effortConfidence < policy.minConfidence) {
+    const before = position(tier, effort);
+    effort = current?.effort ?? 'medium';
+    step('effort-confidence-hold', before, position(tier, effort), { confidence: number(answer.effortConfidence), minConfidence: policy.minConfidence, source: current?.effort ? 'current' : 'default' });
+  }
   if (answer.sensitive || failed) {
-    tier = clamp(TIERS[Math.max(rank(tier), answer.sensitive ? rank('strong') : Math.min(3, rank(fallback.tier) + 1))]);
+    const before = position(tier, effort);
+    const minimumTier = answer.sensitive ? 'strong' : TIERS[Math.min(3, rank(fallback.tier) + 1)];
+    const requestedTier = TIERS[Math.max(rank(tier), rank(minimumTier))];
+    tier = clamp(requestedTier);
     effort = EFFORTS[Math.max(EFFORTS.indexOf(effort), EFFORTS.indexOf('high'))]; reason = answer.sensitive ? 'sensitive-work' : 'previous-request-failed';
+    step(answer.sensitive ? 'sensitive-work-floor' : 'previous-failure-floor', before, position(requestedTier, effort), { minTier: minimumTier, minEffort: 'high' });
+    scopeStep(requestedTier, tier, effort, 'guard');
   }
   // A same-model capability/effort change does not count as a model switch.
-  if (!forced && current && rank(tier) < rank(current.tier) && models[tier].model !== current.model && policy.mode === 'adaptive' && warm && contextTokens > policy.warmTokens) {
-    nextStreak = streak + 1;
-    if (nextStreak < policy.downgradeAfter) { tier = current.tier; reason = 'cache-hold'; }
-    else { reason = 'sustained-downgrade'; nextStreak = 0; }
+  if (current && rank(tier) < rank(current.tier) && models[tier].model !== current.model && policy.mode === 'adaptive' && warm && contextTokens > policy.warmTokens) {
+    const before = position(tier, effort);
+    const details = { contextTokens: number(contextTokens), warmTokens: policy.warmTokens, consecutiveDowngrades: streak + 1, downgradeAfter: policy.downgradeAfter };
+    if (forced) step('cache-bypass', before, before, { ...details, source: 'explicit-choice' });
+    else {
+      nextStreak = streak + 1;
+      if (nextStreak < policy.downgradeAfter) { tier = current.tier; reason = 'cache-hold'; }
+      else { reason = 'sustained-downgrade'; nextStreak = 0; }
+      step(reason, before, position(tier, effort), details);
+    }
   }
   const target = models[tier];
-  effort = supportedEffort(effort, target, policy.maxEffort);
-  return visualFloor({ tier, model: target.model, effort, reason, streak: nextStreak });
+  effort = routedEffort(effort, tier, 'selected-model');
+  return finish(visualFloor({ tier, model: target.model, effort, reason, streak: nextStreak }));
 }

@@ -1,0 +1,41 @@
+name: Unexpected model or effort choice
+description: Help reproduce an unexpected choice without sharing private conversations.
+body:
+  - type: markdown
+    attributes:
+      value: "Keep prompts, keys, auth files, account identifiers and private paths out of this public issue. Describe the task in non-sensitive terms. Sharing an inspected aggregate is optional."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: OS, Node, Jev Pilot and Codex CLI or Claude Code version.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Allowed models and applied settings
+      description: Model scope, effort ceiling and relevant selection rules from the report. Do not paste a global configuration file.
+    validations:
+      required: true
+  - type: textarea
+    id: choice
+    attributes:
+      label: Expected and actual choice
+      description: Model and effort, original recommendation, applied rules, and whether the provider reported the selected model.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: Non-sensitive task summary and outcome
+      description: Optional description of ambiguity, images, recent failure, review or rework. Original prompts and screenshots are not required.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Result reviewed
+      options:
+        - Choice only; task result not checked
+        - Result accepted
+        - More work or a stronger model was needed
+        - Result failed

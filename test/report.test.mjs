@@ -8,6 +8,24 @@ import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 const base = { schema: 1, ts: '2026-10-10T12:00:00Z', run: 'fixture', agent: 'codex' };
 const e = data => ({ ...base, ...data });
+test('skipped classifications never inflate paid calls, failures or missing-cost coverage', () => {
+  const s = summarize([e({ event: 'jev_skipped', reason: 'circuit-open' }), e({ event: 'jev_skipped', reason: 'budget-exhausted' }),
+    e({ event: 'response', cost: 0.1, baselineCost: 0.2 })]);
+  assert.equal(s.jevSkipped, 2); assert.equal(s.jevRequests, 0); assert.equal(s.jevFailed, 0);
+  assert.equal(s.jevUnfinished, 0); assert.equal(s.estimates.jevCost, 0); assert.equal(s.estimates.netDifference, 0.1);
+});
+test('receipts use exact run and decision links, preserve old unknowns and avoid manual guesses', () => {
+  const snapshot = { maxEffort: 'high' }, policyTrace = [{ rule: 'effort-ceiling' }];
+  const s = summarize([e({ event: 'session_start', policySnapshot: snapshot }),
+    e({ event: 'decision', decisionId: 'choice-1', policyTrace }), e({ event: 'decision' }),
+    e({ event: 'response', decisionId: 'choice-1', servedModel: 'gpt-reported' }),
+    e({ event: 'response', decisionId: 'choice-1', servedModel: 'gpt-other-run', run: 'other' }),
+    e({ event: 'response', servedModel: 'gpt-manual', reason: 'manual' })]);
+  assert.equal(s.timeline[0].decisionId, 'choice-1'); assert.deepEqual(s.timeline[0].policySnapshot, snapshot);
+  assert.deepEqual(s.timeline[0].policyTrace, policyTrace); assert.deepEqual(s.timeline[0].servedModels, ['gpt-reported']);
+  assert.equal(s.timeline[0].observedResponses, 1); assert.equal(s.timeline[1].decisionId, null);
+  assert.deepEqual(s.timeline[1].servedModels, []);
+});
 test('reports distinguish classifier calls, decisions, changes and provider requests', () => {
   const s = summarize([e({ event: 'jev_request' }), e({ event: 'jev_result', ok: true, ms: 10 }),
     e({ event: 'decision', model: 'gpt-example', modelChanged: false }), e({ event: 'decision', modelChanged: true, effortChanged: true }),

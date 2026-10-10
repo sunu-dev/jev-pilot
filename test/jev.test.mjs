@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, decisionState } from '../src/jev.mjs';
+import { classify, decisionState, createClassifierGuard } from '../src/jev.mjs';
+import { DEFAULTS, validatePolicy } from '../src/config.mjs';
 import { humanTurns } from '../vendor/dirien/messages.mjs';
 test('single paid request asks independent capability and effort questions', async () => {
   let count = 0; const events = [];
@@ -55,4 +56,82 @@ test('separate reported confidence and option probability remain observable, wit
   response.answers.capability.probabilities = { fast: 0, balanced: 0, strong: 1, frontier: 1 };
   const invalid = await classify({ key: 'fixture', state: {}, fetchImpl: async () => Response.json(response) });
   assert.equal(invalid.ok, true); assert.equal(invalid.capabilityProbability, null); assert.equal(invalid.capabilityMargin, null);
+});
+
+const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
+test('consecutive classifier failures open the circuit, skip without events, and recover with one later probe', async () => {
+  let clock = 1000, calls = 0;
+  const events = [], guard = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 2, jevCircuitCooldownSeconds: 5 }, now: () => clock,
+    classifyImpl: async ({ onEvent }) => { calls++; onEvent({ event: 'jev_request' }); return calls < 3 ? { ok: false, error: 'http-503' } : { ok: true, tier: 'balanced', effort: 'medium' }; } });
+  const first = await guard({ onEvent: e => events.push(e) }); assert.equal(first.jevAttempt, 1); assert.equal(first.circuitState, 'closed');
+  const second = await guard({ onEvent: e => events.push(e) }); assert.equal(second.circuitState, 'open'); assert.equal(second.retryAfterMs, 5000);
+  clock += 4000;
+  const skipped = await guard({ onEvent: e => events.push(e) }); assert.equal(skipped.skipped, 'circuit-open'); assert.equal(skipped.attempted, false); assert.equal(skipped.retryAfterMs, 1000);
+  assert.equal(calls, 2); assert.equal(events.length, 2);
+  clock += 1000;
+  const recovered = await guard({ onEvent: e => events.push(e) }); assert.equal(recovered.ok, true); assert.equal(recovered.recoveryProbe, true); assert.equal(recovered.recovered, true); assert.equal(recovered.circuitState, 'closed'); assert.equal(recovered.consecutiveFailures, 0);
+  assert.equal(events[2].jevAttempt, 3); assert.equal(events[2].recoveryProbe, true);
+});
+test('one half-open recovery probe excludes concurrent probes and a failed probe restarts cooldown', async () => {
+  let clock = 1000, calls = 0;
+  const waiting = deferred(), guard = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 1, jevCircuitCooldownSeconds: 2 }, now: () => clock,
+    classifyImpl: async () => { calls++; return calls === 1 ? { ok: false } : waiting.promise; } });
+  await guard(); clock += 2000;
+  const probe = guard(), competing = await guard();
+  assert.equal(competing.skipped, 'circuit-open'); assert.equal(competing.circuitState, 'half-open'); assert.equal(calls, 2);
+  waiting.resolve({ ok: false, error: 'http-503' });
+  const failed = await probe; assert.equal(failed.circuitState, 'open'); assert.equal(failed.retryAfterMs, 2000); assert.equal(failed.recoveryProbe, true); assert.equal(failed.recovered, false);
+  assert.equal((await guard()).skipped, 'circuit-open'); assert.equal(calls, 2);
+});
+test('a run-wide request limit reserves concurrent attempts before awaiting and never resets on cooldown', async () => {
+  let calls = 0, clock = 1000;
+  const waiting = deferred(), guard = createClassifierGuard({ policy: { ...DEFAULTS, jevMaxRequests: 2, jevCircuitFailures: 1, jevCircuitCooldownSeconds: 1 }, now: () => clock,
+    classifyImpl: async () => { calls++; return waiting.promise; } });
+  const first = guard(), second = guard(), third = await guard();
+  assert.equal(calls, 2); assert.equal(third.skipped, 'budget-exhausted'); assert.equal(third.attempted, false);
+  waiting.resolve({ ok: false });
+  const completed = await Promise.all([first, second]); assert.deepEqual(completed.map(r => r.jevAttempt), [1, 2]);
+  clock += 60000;
+  assert.equal((await guard()).skipped, 'budget-exhausted'); assert.equal(calls, 2);
+  const disabled = createClassifierGuard({ policy: { ...DEFAULTS, jevMaxRequests: 0 }, classifyImpl: async () => { throw new Error('must not execute'); } });
+  assert.equal((await disabled()).jevAttempt, 0); assert.equal((await disabled()).skipped, 'budget-exhausted');
+});
+test('an older in-flight success cannot close a circuit opened by another request', async () => {
+  let calls = 0, clock = 1000;
+  const old = deferred(), guard = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 1 }, now: () => clock,
+    classifyImpl: async () => ++calls === 1 ? old.promise : { ok: false } });
+  const original = guard(); await guard(); old.resolve({ ok: true, tier: 'fast', effort: 'low' });
+  assert.equal((await original).circuitState, 'open'); assert.equal((await guard()).skipped, 'circuit-open'); assert.equal(calls, 2);
+});
+test('successful calls reset the failure streak and independent runs have independent budgets', async () => {
+  const answers = [{ ok: false }, { ok: true }, { ok: false }];
+  const first = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 2, jevMaxRequests: 3 }, classifyImpl: async () => answers.shift() });
+  assert.equal((await first()).consecutiveFailures, 1); assert.equal((await first()).consecutiveFailures, 0); assert.equal((await first()).circuitState, 'closed');
+  assert.equal((await first()).skipped, 'budget-exhausted');
+  const next = createClassifierGuard({ policy: { ...DEFAULTS, jevMaxRequests: 1 }, classifyImpl: async () => ({ ok: true }) });
+  assert.equal((await next()).jevAttempt, 1); assert.equal((await next()).skipped, 'budget-exhausted');
+});
+test('user cancellation neither consumes a pre-aborted attempt nor poisons the failure streak', async () => {
+  let calls = 0;
+  const guard = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 1, jevMaxRequests: 1 }, classifyImpl: async () => { calls++; return { ok: false, error: 'aborted' }; } });
+  const skipped = await guard({ signal: AbortSignal.abort() }); assert.equal(skipped.skipped, 'request-aborted'); assert.equal(skipped.jevAttempt, 0); assert.equal(calls, 0);
+  const attempted = await guard(); assert.equal(attempted.attempted, true); assert.equal(attempted.consecutiveFailures, 0); assert.equal(attempted.circuitState, 'closed');
+  assert.equal((await guard()).skipped, 'budget-exhausted');
+});
+test('guard failures expose only a safe error enum and preserve one real fetch per attempt', async () => {
+  let calls = 0;
+  const events = [], guard = createClassifierGuard({ policy: { ...DEFAULTS, jevCircuitFailures: 1 } });
+  const result = await guard({ key: 'private-fixture', state: { request: 'private text' }, onEvent: e => events.push(e), fetchImpl: async () => { calls++; throw new Error('private-fixture private text'); } });
+  assert.equal(calls, 1); assert.equal(result.error, 'network-or-timeout'); assert.equal(result.jevAttempt, 1); assert.equal(events.filter(e => e.event === 'jev_request').length, 1);
+  assert.ok(!JSON.stringify({ events, result }).includes('private-fixture')); assert.ok(!JSON.stringify({ events, result }).includes('private text'));
+  assert.equal((await guard()).skipped, 'circuit-open');
+  const throwing = createClassifierGuard({ classifyImpl: async () => { throw new Error('private exception'); } });
+  const sanitized = await throwing(); assert.equal(sanitized.error, 'classifier-exception'); assert.ok(!JSON.stringify(sanitized).includes('private exception'));
+});
+test('guard policy validates bounded integers and nullable optional request limits', () => {
+  assert.equal(validatePolicy({ ...DEFAULTS, jevMaxRequests: 0 }).jevMaxRequests, 0);
+  assert.equal(validatePolicy({ ...DEFAULTS, jevMaxRequests: null }).jevMaxRequests, null);
+  for (const extra of [{ jevCircuitFailures: 0 }, { jevCircuitFailures: 1.5 }, { jevCircuitFailures: 21 }, { jevCircuitCooldownSeconds: 0 }, { jevCircuitCooldownSeconds: 3601 }, { jevMaxRequests: -1 }, { jevMaxRequests: 1.5 }, { jevMaxRequests: '2' }, { jevMaxRequests: 1000001 }]) {
+    assert.throws(() => validatePolicy({ ...DEFAULTS, ...extra })); assert.throws(() => createClassifierGuard({ policy: { ...DEFAULTS, ...extra } }));
+  }
 });

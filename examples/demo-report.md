@@ -8,23 +8,24 @@
 | Provider requests | 18 |
 | Completed responses | 18 |
 | Unfinished requests | 0 |
-| Jev requests | 9 |
+| Jev requests | 11 |
 | Jev successes | 8 |
-| Jev failures | 1 |
+| Jev failures | 3 |
+| Skipped Jev calls (no request made) | 1 |
 | Unfinished Jev requests | 0 |
-| Routing decisions | 9 |
+| Routing decisions | 12 |
 | Selected model changes | 4 |
 | Observed served model changes | 4 |
 | Selected effort changes | 3 |
 | Cache holds | 2 |
-| Locally rated decisions | 2/9 |
+| Locally rated decisions | 2/12 |
 | Feedback: right / too weak / too strong / too slow / rework | 1 / 1 / 0 / 0 / 0 |
 | Cache-read share of reported input | 85.7% |
 | Route reuse share of automatic requests | 55.6% |
 | Token-count checks (excluded from price comparison) | 0 |
 | Jev input tokens (reported) | 2300 |
 | Jev output tokens (reported) | 48 |
-| Jev usage coverage | 8/9 |
+| Jev usage coverage | 8/11 |
 | Provider failures | 0 |
 | Usage coverage | 18/18 |
 | Served model coverage | 18/18 |

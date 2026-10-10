@@ -1,5 +1,6 @@
 import { scrub } from '../vendor/dirien/secrets.mjs';
 import { describeCode, lastAssistantText } from '../vendor/dirien/messages.mjs';
+import { DEFAULTS } from './config.mjs';
 
 export const RUBRIC_VERSION = '2026-10-10-quality-context-v2';
 export const QUESTIONS = {
@@ -67,6 +68,48 @@ export async function classify({ key, state, fetchImpl = fetch, signal, onEvent 
     // Provider bodies and exception messages may echo prompts or credentials. Never persist them.
     const error = /^http-\d+$/.test(err.message) ? err.message : err.message === 'invalid-answer' ? 'invalid-answer' : signal?.aborted ? 'aborted' : 'network-or-timeout';
     onEvent({ event: 'jev_result', ok: false, error, ms: Math.round(performance.now() - started) });
-    return { ok: false };
+    return { ok: false, error };
   }
+}
+
+// Create one guard per proxy run. Attempts are reserved synchronously before
+// awaiting the classifier, so concurrent sessions share the same strict cap.
+export function createClassifierGuard({ policy = DEFAULTS, classifyImpl = classify, now = Date.now } = {}) {
+  const threshold = policy.jevCircuitFailures ?? DEFAULTS.jevCircuitFailures;
+  const cooldownSeconds = policy.jevCircuitCooldownSeconds ?? DEFAULTS.jevCircuitCooldownSeconds;
+  const limit = policy.jevMaxRequests ?? null;
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > 20 || !Number.isInteger(cooldownSeconds) || cooldownSeconds < 1 || cooldownSeconds > 3600 ||
+      (limit !== null && (!Number.isInteger(limit) || limit < 0 || limit > 1000000))) throw new Error('Invalid classifier guard settings');
+  let attempts = 0, failures = 0, openUntil = 0, probeInFlight = false, generation = 0;
+  const metadata = (attempted, attempt = attempts, recoveryProbe = false, recovered = false) => ({ attempted, jevAttempt: attempt,
+    circuitState: probeInFlight ? 'half-open' : openUntil ? 'open' : 'closed', consecutiveFailures: failures,
+    retryAfterMs: openUntil ? Math.max(0, Math.ceil(openUntil - now())) : 0, recoveryProbe, recovered });
+  return async function guardedClassify(args = {}) {
+    if (args.signal?.aborted) return { ok: false, skipped: 'request-aborted', ...metadata(false) };
+    if (limit !== null && attempts >= limit) return { ok: false, skipped: 'budget-exhausted', ...metadata(false) };
+    if (openUntil && (now() < openUntil || probeInFlight)) return { ok: false, skipped: 'circuit-open', ...metadata(false) };
+    const recoveryProbe = Boolean(openUntil);
+    if (recoveryProbe) probeInFlight = true;
+    const startedGeneration = generation, attempt = ++attempts;
+    let result;
+    try {
+      result = await classifyImpl({ ...args, onEvent: event => args.onEvent?.({ ...event, jevAttempt: attempt, recoveryProbe }) });
+    } catch { result = { ok: false, error: 'classifier-exception' }; }
+    if (!result || typeof result !== 'object') result = { ok: false, error: 'invalid-answer' };
+    let recovered = false;
+    // A request already in flight when the circuit opened cannot close it or
+    // extend its cooldown. Only the single later recovery probe may do that.
+    if (startedGeneration === generation) {
+      if (args.signal?.aborted || result.error === 'aborted') {
+        if (recoveryProbe) probeInFlight = false;
+      } else if (result.ok) {
+        failures = 0;
+        if (recoveryProbe) { openUntil = 0; probeInFlight = false; generation++; recovered = true; }
+      } else {
+        failures++;
+        if (recoveryProbe || failures >= threshold) { openUntil = now() + cooldownSeconds * 1000; probeInFlight = false; generation++; }
+      }
+    }
+    return { ...result, ...metadata(true, attempt, recoveryProbe, recovered) };
+  };
 }

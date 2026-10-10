@@ -9,25 +9,29 @@ import { createProxy, AUTO } from './proxy.mjs';
 import { createLedger, readLedger } from './ledger.mjs';
 import { summarize, markdown, htmlReport, terminalReport } from './report.mjs';
 import { recordFeedback } from './feedback.mjs';
+import { routingPolicySnapshot } from './receipt.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = '0.1.0-alpha.3';
+const VERSION = '0.1.0-alpha.4';
 const help = `Jev Pilot ${VERSION} · sunulab · experimental
 
 jev-pilot init [--key-file /absolute/path/outside/repo.txt]
 jev-pilot install [--prefix ~/.local]
 jev-pilot doctor
-jev-pilot codex [--models astra,sol,luna] [Codex arguments...]
-jev-pilot claude [--models opus,sonnet,haiku] [Claude Code arguments...]
+jev-pilot codex [--models astra,sol,luna] [--no-jev] [Codex arguments...]
+jev-pilot claude [--models opus,sonnet,haiku] [--no-jev] [Claude Code arguments...]
 jev-pilot project init [balanced|economy|quality|shadow]
 jev-pilot verify [--live codex|claude|all] [--models]
 jev-pilot feedback right|too-weak|too-strong|too-slow|rework [--agent codex|claude]
+                   [--decision ID]
 jev-pilot report [--from /path/to/logs] [--agent codex|claude]
                  [--since YYYY-MM-DD] [--html file | --json file | --markdown file]
                  [--open]
 jev-pilot uninstall
 
 Aliases: pilot-codex, pilot-claude. Original CLI commands are unchanged.
+--no-jev disables external classification for this run; local proxy reporting stays on.
+Feedback targets the latest decision, or the exact --decision ID from the report.
 No prompts or credentials are logged. TypeSafe receives bounded routing context.
 API-equivalent estimates are not subscription quota savings.
 `;
@@ -45,6 +49,19 @@ export function takeModelScope(args) {
   const boundary = remaining.indexOf('--');
   if (scope && remaining.slice(0, boundary < 0 ? remaining.length : boundary).some(a => ['--model', '-m'].includes(a) || a.startsWith('--model='))) throw new Error('--models selects automatic routing scope; choose either --models or a manual --model');
   return { args: remaining, scope };
+}
+export function takeLaunchOptions(args) {
+  const parsed = takeModelScope(args), remaining = [];
+  let noJev = false;
+  for (let i = 0; i < parsed.args.length; i++) {
+    const arg = parsed.args[i];
+    if (arg === '--') { remaining.push(...parsed.args.slice(i)); break; }
+    if (arg.startsWith('--no-jev=')) throw new Error('--no-jev is a flag and does not take a value');
+    if (arg !== '--no-jev') { remaining.push(arg); continue; }
+    if (noJev) throw new Error('Specify --no-jev only once');
+    noJev = true;
+  }
+  return { args: remaining, scope: parsed.scope, noJev };
 }
 export function cleanEnv(input) {
   const env = { ...input };
@@ -75,9 +92,10 @@ export function agentCommand(agent, args, url, token, context) {
 }
 export async function runAgent(agent, args, { quiet = false, env = process.env, verification = false } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('Expected codex or claude');
-  const parsed = takeModelScope(args); args = parsed.args;
+  const parsed = takeLaunchOptions(args); args = parsed.args;
   const config = loadConfig(projectDir(agent, args));
   config.policy = scopedPolicy(config.policy, agent, parsed.scope);
+  if (parsed.noJev) config.policy = { ...config.policy, sendToJev: false };
   const executable = config.binaries[agent] || agent;
   const boundary = args.indexOf('--');
   const nativeArgs = args.slice(0, boundary < 0 ? args.length : boundary);
@@ -90,14 +108,14 @@ export async function runAgent(agent, args, { quiet = false, env = process.env, 
     const models = resolveModels(config.policy, agent, catalog);
     const key = config.policy.sendToJev ? loadKey(config, env) : '';
     ledger = createLedger({ agent, dir: join(dataHome(), ...(verification ? ['verification'] : []), 'logs'), warn: message => console.error(`[Jev Pilot] ${message}`) });
-    ledger.log({ event: 'session_start', mode: config.policy.mode, allowedModels: activeModelIds(config.policy, agent) });
+    ledger.log({ event: 'session_start', mode: config.policy.mode, allowedModels: activeModelIds(config.policy, agent), policySnapshot: routingPolicySnapshot(config.policy, models) });
     proxy = createProxy({ agent, ...config, models, catalog, key, log: ledger.log,
       notice: message => { if (!quiet) console.error(message); } });
     const url = await proxy.listen();
     const command = agentCommand(agent, args, url, proxy.token, Math.min(...Object.values(models).filter(m => m.allowed !== false).map(m => m.context)));
     childArgs = command.args;
     childEnvironment = { ...childEnvironment, ...command.env };
-    if (!quiet) console.error(`[Jev Pilot] ${agent} · ${config.policy.mode} · models ${activeModelIds(config.policy, agent).join(', ')} · ${key ? 'Jev enabled' : 'no Jev key; default route'} · report ${ledger.path}`);
+    if (!quiet) console.error(`[Jev Pilot] ${agent} · ${config.policy.mode} · models ${activeModelIds(config.policy, agent).join(', ')} · ${!config.policy.sendToJev ? 'Jev disabled for this run; local reporting active' : key ? 'Jev enabled' : 'no Jev key; default route'} · report ${ledger.path}`);
   }
   let code;
   try {
@@ -216,15 +234,18 @@ export async function main(args = process.argv.slice(2)) {
     return test.status ?? 1;
   }
   if (command === 'feedback') {
-    let agent;
+    let agent, decisionId;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i];
-      if (agent !== undefined || (arg !== '--agent' && !arg.startsWith('--agent='))) throw new Error('Feedback accepts a rating and one optional --agent codex|claude');
-      agent = arg === '--agent' ? rest[++i] : arg.slice(8);
-      if (!agent || agent.startsWith('-')) throw new Error('--agent requires codex or claude');
+      const name = arg === '--agent' || arg.startsWith('--agent=') ? '--agent' : arg === '--decision' || arg.startsWith('--decision=') ? '--decision' : null;
+      if (!name) throw new Error('Feedback accepts a rating, optional --agent codex|claude and optional --decision ID');
+      const value = arg === name ? rest[++i] : arg.slice(name.length + 1);
+      if (!value || value.startsWith('-')) throw new Error(`${name} requires ${name === '--agent' ? 'codex or claude' : 'a decision ID'}`);
+      if (name === '--agent') { if (agent !== undefined) throw new Error('Specify --agent only once'); agent = value; }
+      else { if (decisionId !== undefined) throw new Error('Specify --decision only once'); decisionId = value; }
     }
-    const result = recordFeedback({ rating: rest[0], agent });
-    console.log(`Recorded ${result.event.rating} for ${result.event.agent} · ${result.event.model} · ${result.event.effort ?? 'default'} (decision ${result.event.sourceTs}). Local feedback only; routing policy was not changed.`);
+    const result = recordFeedback({ rating: rest[0], agent, decisionId });
+    console.log(`Recorded ${result.event.rating} for ${result.event.agent} · ${result.event.model} · ${result.event.effort ?? 'default'} (decision ${result.event.sourceDecision ? result.event.sourceDecision + ' at ' : ''}${result.event.sourceTs}). Local feedback only; routing policy was not changed.`);
     return 0;
   }
   if (command === 'report') {

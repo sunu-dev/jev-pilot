@@ -14,6 +14,12 @@ export function summarize(events, { agent, since, run, malformed = 0 } = {}) {
     ratings: Object.fromEntries(RATINGS.map(r => [r, [...feedbackByDecision.values()].filter(v => v === r).length])) };
   const jev = selected.filter(e => e.event === 'jev_result');
   const responses = selected.filter(e => e.event === 'response');
+  const policies = new Map(selected.filter(e => e.event === 'session_start' && e.policySnapshot).map(e => [e.run, e.policySnapshot]));
+  const responsesByDecision = new Map();
+  for (const response of responses) if (response.decisionId) {
+    const key = `${response.run}/${response.decisionId}`;
+    const list = responsesByDecision.get(key) ?? []; list.push(response); responsesByDecision.set(key, list);
+  }
   const inference = responses.filter(e => e.reason !== 'count-tokens');
   const requests = selected.filter(e => e.event === 'request');
   const done = new Set(responses.map(e => e.request));
@@ -31,7 +37,11 @@ export function summarize(events, { agent, since, run, malformed = 0 } = {}) {
   for (const e of inference) for (const k of Object.keys(usage)) usage[k] += Number.isFinite(e.usage?.[k]) ? e.usage[k] : 0;
   const latency = jev.map(e => e.ms).filter(Number.isFinite).sort((a, b) => a - b);
   const pct = p => latency.length ? latency[Math.min(latency.length - 1, Math.ceil(latency.length * p) - 1)] : null;
-  const timeline = decisions.map(e => ({ ts: e.ts, agent: e.agent, model: e.model, effort: e.effort, reason: e.reason, changed: e.modelChanged, shadow: e.shadow, proposedModel: e.proposedModel, proposedEffort: e.proposedEffort,
+  const timeline = decisions.map(e => ({ ts: e.ts, decisionId: e.decisionId ?? null, agent: e.agent, model: e.model, effort: e.effort, reason: e.reason, changed: e.modelChanged, shadow: e.shadow, proposedModel: e.proposedModel, proposedEffort: e.proposedEffort,
+    policySnapshot: e.policySnapshot ?? policies.get(e.run) ?? null,
+    policyTrace: Array.isArray(e.policyTrace) ? e.policyTrace : [], classifierState: e.classifierState ?? null,
+    observedResponses: (responsesByDecision.get(`${e.run}/${e.decisionId}`) ?? []).length,
+    servedModels: [...new Set((responsesByDecision.get(`${e.run}/${e.decisionId}`) ?? []).map(response => response.servedModel).filter(Boolean))],
     recommendedTier: e.recommendedTier ?? null, recommendedEffort: e.recommendedEffort ?? null,
     confidence: Number.isFinite(e.confidence) ? e.confidence : null, effortConfidence: Number.isFinite(e.effortConfidence) ? e.effortConfidence : null,
     capabilityProbability: Number.isFinite(e.capabilityProbability) ? e.capabilityProbability : null,
@@ -41,7 +51,7 @@ export function summarize(events, { agent, since, run, malformed = 0 } = {}) {
     sensitive: typeof e.sensitive === 'boolean' ? e.sensitive : null,
     riskConfidence: Number.isFinite(e.riskConfidence) ? e.riskConfidence : null, rubricVersion: e.rubricVersion ?? null,
     feedback: feedbackByDecision.get(decisionKey(e)) ?? null }));
-  const autoRequests = requests.filter(e => e.reason && !['manual', 'auxiliary', 'count-tokens', 'tool-or-auxiliary'].includes(e.reason));
+  const autoRequests = requests.filter(e => e.reason && !['manual', 'auxiliary', 'count-tokens', 'tool-or-auxiliary', 'tool-continuation-unmatched'].includes(e.reason));
   const reusedRequests = autoRequests.filter(e => ['continuation', 'tool-continuation', 'confirmation-hold'].includes(e.reason)).length;
   const inputTotal = usage.input + usage.cacheRead + usage.cacheWrite;
   const times = selected.map(e => e.ts).filter(t => typeof t === 'string' && Number.isFinite(Date.parse(t))).sort();
@@ -72,6 +82,8 @@ export function summarize(events, { agent, since, run, malformed = 0 } = {}) {
     completed: inference.filter(e => e.completed).length, providerFailures: responses.filter(e => e.status >= 400 || e.error).length,
     inferenceResponses: inference.length, tokenChecks: responses.length - inference.length, servedModelChanges,
     decisions: decisions.length, jevRequests,
+    jevSkipped: selected.filter(e => e.event === 'jev_skipped').length,
+    jevSkipReasons: count(selected.filter(e => e.event === 'jev_skipped').map(e => e.reason)),
     jevSucceeded: jev.filter(e => e.ok).length, jevFailed: jev.filter(e => !e.ok).length,
     jevInputTokens: jev.reduce((n, e) => n + (Number.isFinite(e.inputTokens) ? e.inputTokens : 0), 0),
     jevOutputTokens: jev.reduce((n, e) => n + (Number.isFinite(e.outputTokens) ? e.outputTokens : 0), 0),
@@ -98,7 +110,7 @@ export function markdown(s) {
   return `# Jev Pilot usage report\n\n` +
     `| Metric | Value |\n| --- | ---: |\n` +
     Object.entries({ Runs: s.runs, 'Provider requests': s.requests, 'Completed responses': s.completed, 'Unfinished requests': s.unfinished,
-      'Jev requests': s.jevRequests, 'Jev successes': s.jevSucceeded, 'Jev failures': s.jevFailed, 'Unfinished Jev requests': s.jevUnfinished, 'Routing decisions': s.decisions,
+      'Jev requests': s.jevRequests, 'Jev successes': s.jevSucceeded, 'Jev failures': s.jevFailed, 'Skipped Jev calls (no request made)': s.jevSkipped, 'Unfinished Jev requests': s.jevUnfinished, 'Routing decisions': s.decisions,
       'Selected model changes': s.modelChanges, 'Observed served model changes': s.servedModelChanges, 'Selected effort changes': s.effortChanges, 'Cache holds': s.cacheHolds,
       'Locally rated decisions': `${s.feedback.ratedDecisions}/${s.feedback.totalDecisions}`,
       'Feedback: right / too weak / too strong / too slow / rework': RATINGS.map(r => s.feedback.ratings[r]).join(' / '),

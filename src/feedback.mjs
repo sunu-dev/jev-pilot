@@ -12,15 +12,19 @@ const safeTimestamp = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T
 // Feedback is an observation about a saved routing decision, not an evaluation
 // of its response. A correction creates another event; report consumers use the
 // latest event for the same sourceDecision (or legacy run/session/timestamp).
-export function recordFeedback({ dir = join(dataHome(), 'logs'), rating, agent, warn = () => {} } = {}) {
+export function recordFeedback({ dir = join(dataHome(), 'logs'), rating, agent, decisionId, warn = () => {} } = {}) {
   if (!FEEDBACK_RATINGS.includes(rating)) throw new Error(`Invalid feedback rating. Choose: ${FEEDBACK_RATINGS.join(', ')}.`);
   if (agent !== undefined && !AGENTS.has(agent)) throw new Error('Feedback tool must be codex or claude.');
+  if (decisionId !== undefined && !safeId(decisionId)) throw new Error('Invalid --decision ID. Use the exact decision ID from the report.');
 
   const { events, malformed } = readLedger(dir);
   // An unfinished write could be a newer decision. Do not silently attach the
   // verdict to an older decision while another process is writing that record.
   if (malformed) throw new Error('Feedback was not saved: routing logs contain incomplete or unreadable records. Wait for the current write to finish and try again.');
-  const candidates = events.filter(event => event.event === 'decision' && AGENTS.has(event.agent) && (agent === undefined || event.agent === agent));
+  const candidates = events.filter(event => event.event === 'decision' && AGENTS.has(event.agent) && (agent === undefined || event.agent === agent)
+    && (decisionId === undefined || event.decisionId === decisionId));
+  if (decisionId !== undefined && !candidates.length) throw new Error(`No routing decision found for the specified ID${agent ? ` and ${agent}` : ''}. Check --decision and --agent; feedback was not saved.`);
+  if (decisionId !== undefined && candidates.length > 1) throw new Error('Feedback was not saved: the decision ID matches multiple records. Check the routing logs before retrying.');
   if (!candidates.length) throw new Error(`No routing decisions found${agent ? ` for ${agent}` : ''}. Use pilot-codex or pilot-claude before recording feedback.`);
 
   let target;
@@ -33,12 +37,12 @@ export function recordFeedback({ dir = join(dataHome(), 'logs'), rating, agent, 
     if (time >= latest) { target = candidate; latest = time; }
   }
   if (candidates.some(candidate => Date.parse(candidate.ts) === latest && candidate.run !== target.run)) {
-    throw new Error('Feedback was not saved: the latest decision is ambiguous across runs. Specify codex or claude, or record feedback after the intended session’s next decision.');
+    throw new Error('Feedback was not saved: the latest decision is ambiguous across runs. Specify --decision ID, narrow with --agent codex|claude, or record feedback after the intended session’s next decision.');
   }
   if (!safeId(target.run) || !safeId(target.session) || !safeModel(target.model) ||
       (target.effort != null && !EFFORTS.has(target.effort)) ||
       (target.decisionId !== undefined && !safeId(target.decisionId))) {
-    throw new Error('Feedback was not saved: the latest routing decision has invalid linking metadata.');
+    throw new Error('Feedback was not saved: the selected routing decision has invalid linking metadata.');
   }
 
   const feedback = {

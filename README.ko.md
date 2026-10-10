@@ -8,6 +8,10 @@
 
 **실험적 알파 버전입니다. 구독 한도 절감률과 장기 작업 품질은 아직 검증하지 않았습니다.** 비용 차이는 관측한 토큰에 API 단가를 적용한 추정치이며, 실제 청구액이나 구독 한도 절감률이 아닙니다.
 
+![허용 모델, 비용 추정과 사용량 확인 범위를 보여 주는 Jev Pilot 보고서](examples/report-preview.png)
+
+가상 데이터와 예시 단가로 만든 합성 데모입니다. 표시된 비율은 실측 절감률이 아닙니다. [오프라인 데모](examples/demo-report.html) · [계산 방식](docs/reporting.md).
+
 ## 설치부터 검증까지
 
 Node.js 22 이상, 로그인된 `codex` 또는 `claude`가 필요합니다. macOS/Linux 소스 설치 기준입니다.
@@ -15,7 +19,7 @@ Node.js 22 이상, 로그인된 `codex` 또는 `claude`가 필요합니다. macO
 소스 폴더를 유지할 필요 없이 고정 버전 패키지로 설치할 수도 있습니다.
 
 ```sh
-npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.3/sunulab-jev-pilot-0.1.0-alpha.3.tgz
+npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.4/sunulab-jev-pilot-0.1.0-alpha.4.tgz
 jev-pilot verify
 ```
 
@@ -106,7 +110,16 @@ open examples/demo-report.html
 
 ## 선택 품질도 기록하기
 
-결과를 검토한 직후 다른 터미널에서 `jev-pilot feedback too-weak --agent codex`로 최근 선택을 평가할 수 있습니다. `right`(적절), `too-strong`(과함), `too-slow`(느림), `rework`(재작업 필요)도 지원합니다. 해당 도구의 **모든 로컬 프로젝트 가운데 최근 결정**이 대상이므로 명령에 표시된 시각과 모델을 확인하세요. 마지막 평가만 집계하며 자동 학습·전송은 하지 않습니다.
+보고서에서 **선택 규칙 보기**를 펼치면 원래 추천, 모델 범위·확신도·캐시·추론 강도 제한, 최종 선택과 연결된 공급자 응답 모델을 확인할 수 있습니다. **이 선택 평가하기**에는 해당 결정만 정확히 지정하는 명령이 표시됩니다.
+
+```sh
+jev-pilot feedback too-weak --decision <결정-ID> --agent codex
+pilot-codex --no-jev --models sol  # 이번 실행만 외부 분류 없이 관측
+```
+
+`--decision`을 생략하면 해당 도구의 **모든 로컬 프로젝트 가운데 최근 결정**이 대상입니다. `right`(적절), `too-strong`(과함), `too-slow`(느림), `rework`(재작업 필요)도 지원합니다. 마지막 평가만 집계하며 자동 학습·전송은 하지 않습니다. 보고서는 명령을 보여 주며 직접 실행하지 않습니다.
+
+분류가 연속 3번 실패하면 60초 동안 새 분류를 쉬고, 이후 한 요청으로 회복을 확인합니다. 실행별 분류 호출 상한도 설정할 수 있습니다. `--no-jev`는 저장된 설정을 바꾸지 않고 이번 실행만 분류를 끕니다. [설정 설명](docs/configuration.md#classifier-availability-and-request-limits).
 
 보고서에서 Jev의 원래 추천과 최종 모델·추론 강도를 따로 확인할 수 있습니다. 추천을 펼치면 분류 확신도와 선택 확률도 표시합니다. 이것은 작업 성공 확률이 아닙니다. [커뮤니티 조사와 반영](docs/community-routing-research.ko.md) · [보고서 설명](docs/reporting.md).
 

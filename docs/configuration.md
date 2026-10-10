@@ -17,6 +17,9 @@ Project settings: nearest `.jev-pilot.json`, walking up from the working directo
 | warmTokens | 20000 | context threshold for the cache hold heuristic |
 | cacheIdleMinutes | 5 | cache becomes cold after this idle time; heuristic, not a provider TTL guarantee |
 | requestChars | 2000 | latest text limit sent to TypeSafe (100–4000) |
+| jevCircuitFailures | 3 | consecutive classifier failures before pausing new Jev calls (integer 1–20) |
+| jevCircuitCooldownSeconds | 60 | pause before one later request may probe recovery (integer 1–3600) |
+| jevMaxRequests | null | optional Jev attempt cap shared across this launcher run; null is unlimited, 0 disables attempts (integer 0–1000000) |
 | codexModels / claudeModels | [] | optional automatic model scope; empty means use tier bounds |
 | codex / claude | see below | mapping of capability tiers to model IDs |
 
@@ -47,6 +50,32 @@ Configure model IDs that your plan can actually use. Pilot checks Codex's local 
 Claude uses the configured effort allowlist low/medium/high/xhigh/max; Haiku has effort/thinking removed. Supported capabilities vary by model. `doctor` cannot establish Claude capability or entitlement. Verify configured models before a long session. Explicit model choices pass through unchanged and can exceed automatic policy limits.
 
 For inherited gateway environment variables, Pilot refuses to silently replace another upstream. Clear your gateway explicitly or use the original CLI. No custom upstream URL is accepted from project files.
+
+## Classifier availability and request limits
+
+The classifier makes at most one Jev request per new classification attempt, with a six-second timeout and no automatic retry. Matching duplicate requests and tool continuations reuse an existing decision. A single availability guard is shared by every routing session within one launcher process; another launch starts a fresh failure streak and request budget. These limits concern Jev classification, not the original provider's inference requests or subscription allowance.
+
+After `jevCircuitFailures` consecutive failures, new classifications are skipped for `jevCircuitCooldownSeconds`. Existing in-flight attempts are not canceled. The next eligible user request after the pause makes one recovery probe; concurrent requests skip Jev while that probe is pending. Success closes the circuit, while failure starts another pause. There is no background probe or retry timer. Skipped classification uses the normal current/default-route fallback, subject to the allowed models, effort ceiling and visual-task floor, while the original provider request continues.
+
+`jevMaxRequests` reserves an attempt before it starts, so concurrent sessions cannot exceed the configured cap. Failed attempts and requests canceled after the attempt begins consume this budget; cancellation before an attempt starts does not. User cancellation does not count toward the consecutive-failure threshold. The budget never resets during a run, including after successful recovery. Attempt counts do not establish whether TypeSafe billed a canceled or failed request.
+
+For example, these project settings allow up to 100 Jev attempts during a launch:
+
+```json
+{
+  "jevCircuitFailures": 3,
+  "jevCircuitCooldownSeconds": 60,
+  "jevMaxRequests": 100
+}
+```
+
+Set `"sendToJev": false` to turn off external classification entirely while keeping Pilot's proxy, fallback routing and local report. The original provider still receives requests. `"enabled": false` instead runs the original CLI directly. Settings are loaded at launch; restart Pilot to apply changes. Skips are recorded separately from real Jev request/result events, with a reason such as `circuit-open` or `budget-exhausted`; decisions include bounded classifier-state metadata and an effective policy snapshot/trace.
+
+## Turn history and delayed responses
+
+Pilot keeps routing decisions for the most recent 64 distinct human turns in each in-memory routing session. The history uses process-salted digests and route metadata, not stored prompt text or image pixels. A matching older tool continuation reuses its own route and decision link; its late response cannot update a newer turn's routing/cache state. Only the latest started main request of the current turn may update that state.
+
+When a tool request has no matching retained turn, including after history eviction or process restart, Pilot uses the current/default fallback without inventing a decision link. Its response is logged without `decisionId` and does not update the current turn's routing/cache state. This bounded history is not persistent resume support or proof that every future CLI/MCP message shape is recognized.
 
 ## Automatic model scope
 

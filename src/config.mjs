@@ -8,6 +8,7 @@ export const DEFAULTS = {
   enabled: true, sendToJev: true, mode: 'adaptive', minTier: 'fast', maxTier: 'frontier',
   defaultTier: 'balanced', maxEffort: 'high', minConfidence: 0.6,
   downgradeAfter: 3, warmTokens: 20000, cacheIdleMinutes: 5, requestChars: 2000,
+  jevCircuitFailures: 3, jevCircuitCooldownSeconds: 60, jevMaxRequests: null,
   codexModels: [], claudeModels: [],
   imageMinTier: 'strong', imageMinEffort: 'high',
   codex: { fast: 'gpt-6-luna', balanced: 'gpt-6.1-sol', strong: 'gpt-6.1-sol', frontier: 'gpt-6-astra' },
@@ -41,6 +42,10 @@ export function validatePolicy(p) {
     if (!Number.isFinite(p[k]) || p[k] < min || p[k] > max) throw new Error(`Invalid ${k}`);
   }
   for (const k of ['downgradeAfter', 'warmTokens', 'requestChars']) if (!Number.isInteger(p[k])) throw new Error(`Invalid ${k}`);
+  for (const [k, max] of [['jevCircuitFailures', 20], ['jevCircuitCooldownSeconds', 3600]]) {
+    if (!Number.isInteger(p[k]) || p[k] < 1 || p[k] > max) throw new Error(`Invalid ${k}`);
+  }
+  if (p.jevMaxRequests !== null && (!Number.isInteger(p.jevMaxRequests) || p.jevMaxRequests < 0 || p.jevMaxRequests > 1000000)) throw new Error('Invalid jevMaxRequests');
   for (const agent of ['claude', 'codex']) for (const tier of TIERS) {
     if (!new RegExp(`^${agent === 'codex' ? 'gpt' : 'claude'}-[A-Za-z0-9._-]+$`).test(p[agent]?.[tier] ?? '')) throw new Error(`Invalid ${agent}.${tier}`);
   }

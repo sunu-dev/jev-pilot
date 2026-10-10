@@ -131,3 +131,85 @@ test('an explicit choice may lower a warm route immediately while normal automat
   const extra = { current: { tier: 'frontier', model: models.frontier.model, effort: 'high' }, warm: true, contextTokens: 50000 };
   assert.equal(call(extra).tier, 'frontier'); assert.equal(call({ ...extra, forced: true }).tier, 'fast');
 });
+
+const rules = route => route.trace.map(entry => entry.rule);
+const point = (tier, effort) => ({ tier, model: models[tier].model, effort });
+test('trace preserves the order of bounds, independent confidence holds, guard and visual effort constraints', () => {
+  const limited = { ...models, strong: { ...models.strong, efforts: ['low'] } };
+  const r = call({ answer: { ...a('frontier', 'max'), confidence: 0.2, effortConfidence: 0.3, sensitive: true },
+    current: point('balanced', 'low'), policy: { ...DEFAULTS, maxTier: 'strong', maxEffort: 'medium' }, models: limited, visual: true });
+  assert.deepEqual(rules(r), ['jev-recommendation', 'tier-maximum', 'capability-confidence-hold', 'effort-confidence-hold',
+    'sensitive-work-floor', 'effort-ceiling', 'model-effort-support', 'visual-floor', 'effort-ceiling', 'model-effort-support', 'result']);
+  assert.deepEqual(r.trace[0].after, point('frontier', 'max'));
+  assert.deepEqual(r.trace[1].after, point('strong', 'max'));
+  assert.deepEqual(r.trace[2].after, point('balanced', 'max'));
+  assert.deepEqual(r.trace[3].after, point('balanced', 'low'));
+  assert.deepEqual(r.trace[4].after, point('strong', 'high'));
+  assert.deepEqual(r.trace[5].details, { stage: 'selected-model', maxEffort: 'medium' });
+  assert.deepEqual(r.trace[6].details.supportedEfforts, ['low']);
+  assert.deepEqual(r.trace.at(-1).after, point('strong', 'low'));
+  assert.equal(r.reason, 'visual-context');
+});
+test('trace distinguishes noncontiguous model scope from tier bounds and records same-model tier limits', () => {
+  const gap = call({ ...scoped(['astra', 'luna'], { maxEffort: 'medium' }), answer: a('balanced', 'xhigh') });
+  assert.deepEqual(rules(gap), ['jev-recommendation', 'model-scope', 'effort-ceiling', 'result']);
+  assert.deepEqual(gap.trace[1].details.allowedTiers, ['fast', 'frontier']);
+  assert.deepEqual(gap.trace[1].before, point('balanced', 'xhigh'));
+  assert.deepEqual(gap.trace[1].after, point('frontier', 'xhigh'));
+  const minimum = call({ policy: { ...DEFAULTS, minTier: 'strong', defaultTier: 'strong' }, answer: a('balanced', 'low') });
+  assert.deepEqual(rules(minimum), ['jev-recommendation', 'tier-minimum', 'result']);
+  assert.equal(minimum.trace[1].before.model, minimum.trace[1].after.model);
+  assert.equal(minimum.reason, 'jev'); // The existing reason treats equal physical models as no model limit.
+});
+test('trace makes a visual floor restricted by scope and effort ceiling visible', () => {
+  const r = call({ ...scoped(['luna'], { maxEffort: 'low' }), visual: true });
+  assert.deepEqual(rules(r), ['jev-recommendation', 'visual-floor', 'tier-maximum', 'effort-ceiling', 'result']);
+  assert.deepEqual(r.trace[1].before, point('fast', 'low'));
+  assert.deepEqual(r.trace[1].after, point('strong', 'high'));
+  assert.deepEqual(r.trace[2].after, point('fast', 'high'));
+  assert.deepEqual(r.trace[3].after, point('fast', 'low'));
+  assert.equal(r.trace[2].details.stage, 'visual'); assert.equal(r.trace[3].details.stage, 'visual');
+  assert.equal(r.model, models.fast.model); assert.equal(r.effort, 'low');
+});
+test('trace places warm-cache holds before effort support and explains release or explicit bypass', () => {
+  const extra = { answer: a('fast', 'max'), current: point('frontier', 'high'), warm: true, contextTokens: 50000 };
+  const held = call(extra);
+  assert.deepEqual(rules(held), ['jev-recommendation', 'cache-hold', 'effort-ceiling', 'result']);
+  assert.deepEqual(held.trace[1].before, point('fast', 'max'));
+  assert.deepEqual(held.trace[1].after, point('frontier', 'max'));
+  assert.deepEqual(held.trace[1].details, { contextTokens: 50000, warmTokens: 20000, consecutiveDowngrades: 1, downgradeAfter: 3 });
+  const released = call({ ...extra, streak: 2 });
+  assert.deepEqual(rules(released), ['jev-recommendation', 'sustained-downgrade', 'effort-ceiling', 'result']);
+  assert.equal(released.tier, 'fast'); assert.equal(released.streak, 0); assert.equal(released.trace[1].details.consecutiveDowngrades, 3);
+  const forced = call({ ...extra, forced: true });
+  assert.deepEqual(rules(forced), ['explicit-choice', 'cache-bypass', 'effort-ceiling', 'result']);
+  assert.deepEqual(forced.trace[1].before, forced.trace[1].after); assert.equal(forced.tier, 'fast');
+});
+test('trace records the failure floor followed by bounds without lowering stronger reasoning', () => {
+  const r = call({ answer: a('fast', 'xhigh'), current: point('strong', 'high'), failed: true,
+    policy: { ...DEFAULTS, maxTier: 'strong', maxEffort: 'xhigh' } });
+  assert.deepEqual(rules(r), ['jev-recommendation', 'previous-failure-floor', 'tier-maximum', 'result']);
+  assert.deepEqual(r.trace[1].after, point('frontier', 'xhigh'));
+  assert.deepEqual(r.trace[2].after, point('strong', 'xhigh'));
+  assert.equal(r.reason, 'previous-request-failed'); assert.equal(r.effort, 'xhigh');
+});
+test('fallback traces explain rejected current routes and never inherit earlier traces or private fields', () => {
+  const current = { ...point('frontier', 'xhigh'), trace: [{ rule: 'OLD_PRIVATE_TRACE' }], privatePrompt: 'PRIVATE_PROMPT' };
+  const previousTrace = structuredClone(current.trace);
+  const retained = call({ current, answer: { ok: false } });
+  assert.deepEqual(rules(retained), ['fallback-current', 'effort-ceiling', 'result']);
+  assert.ok(!JSON.stringify(retained.trace).includes('PRIVATE')); assert.deepEqual(current.trace, previousTrace);
+  const rejected = call({ ...scoped(['sol']), current, answer: { ok: false } });
+  assert.deepEqual(rules(rejected), ['fallback-default', 'result']);
+  assert.equal(rejected.trace[0].details.previousRouteRejected, true);
+  assert.deepEqual(rejected.trace.at(-1).after, point('balanced', 'medium'));
+});
+test('trace explains model effort removal and the minimum supported effort without inventing a global minimum', () => {
+  const haiku = call({ models: { ...models, fast: { model: 'claude-haiku-5-5', efforts: [] } } });
+  assert.deepEqual(rules(haiku), ['jev-recommendation', 'model-effort-support', 'result']);
+  assert.equal(haiku.trace[1].after.effort, null); assert.deepEqual(haiku.trace[1].details.supportedEfforts, []);
+  const minimum = call({ models: { ...models, fast: { ...models.fast, efforts: ['high'] } } });
+  assert.deepEqual(rules(minimum), ['jev-recommendation', 'model-effort-support', 'result']);
+  assert.equal(minimum.effort, 'high'); assert.deepEqual(minimum.trace[1].details.supportedEfforts, ['high']);
+  assert.throws(() => call({ policy: { ...DEFAULTS, maxEffort: 'medium' }, models: { ...models, fast: { ...models.fast, efforts: ['high'] } } }), /ceiling is unsupported/);
+});

@@ -5,7 +5,8 @@ import { dataHome } from './config.mjs';
 
 const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode', 'allowedModels',
   'decisionId', 'recommendedTier', 'recommendedEffort', 'effortConfidence', 'sensitive', 'riskConfidence', 'capabilityProbability', 'capabilityMargin', 'effortProbability', 'effortMargin', 'rubricVersion',
-  'rating', 'sourceRun', 'sourceTs', 'sourceSession', 'sourceDecision']);
+  'rating', 'sourceRun', 'sourceTs', 'sourceSession', 'sourceDecision',
+  'policySnapshot', 'policyTrace', 'classifierState', 'firstByteMs', 'providerFirstByteMs']);
 export function createLedger({ dir = join(dataHome(), 'logs'), agent, warn = () => {}, now = () => new Date().toISOString() } = {}) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const run = randomUUID();

@@ -16,6 +16,85 @@ async function harness(t, overrides = {}) {
   const send = (input, extra = {}, headers = {}) => fetch(url + '/v1/responses', { method: 'POST', headers: { 'x-jev-pilot-token': proxy.token, authorization: 'Bearer subscription-placeholder', ...headers }, body: JSON.stringify({ model: AUTO, input, client_metadata: { thread_id: 'test-thread' }, ...extra }) });
   return { proxy, url, calls, events, send, decisions: () => decisions };
 }
+test('repeated classifier failures skip promptly, preserve the route and recover after cooldown', async t => {
+  let time = 1000, attempts = 0;
+  const h = await harness(t, { now: () => time, policy: { ...DEFAULTS, jevCircuitFailures: 2, jevCircuitCooldownSeconds: 1 },
+    decideImpl: async () => ++attempts < 3 ? { ok: false, error: 'network-or-timeout' } : answer });
+  for (const prompt of ['First task', 'Second task', 'Third task', 'Fourth task']) await (await h.send(prompt)).text();
+  assert.equal(attempts, 2); assert.equal(h.calls.length, 4);
+  const skipped = h.events.filter(event => event.event === 'jev_skipped');
+  assert.equal(skipped.length, 2); assert.equal(skipped[0].reason, 'circuit-open');
+  const last = h.events.filter(event => event.event === 'decision').at(-1);
+  assert.equal(last.reason, 'jev-circuit-open'); assert.equal(last.model, DEFAULTS.codex.balanced);
+  assert.equal(last.classifierState.attempted, false); assert.equal(last.policyTrace[0].rule, 'jev-circuit-open');
+  time += 1001;
+  await (await h.send('Fifth task')).text();
+  const recovered = h.events.filter(event => event.event === 'decision').at(-1);
+  assert.equal(attempts, 3); assert.equal(recovered.model, DEFAULTS.codex.fast);
+  assert.equal(recovered.classifierState.recovered, true);
+});
+test('parallel sessions share a strict classifier budget while provider inference continues', async t => {
+  let attempts = 0;
+  const h = await harness(t, { policy: { ...DEFAULTS, jevMaxRequests: 1 }, decideImpl: async () => {
+    attempts++; await new Promise(resolve => setTimeout(resolve, 10)); return answer;
+  } });
+  await Promise.all(['one', 'two'].map(async id => (await h.send('Task ' + id, { client_metadata: { thread_id: id } })).text()));
+  assert.equal(attempts, 1); assert.equal(h.calls.length, 2);
+  assert.equal(h.events.filter(event => event.event === 'jev_skipped' && event.reason === 'budget-exhausted').length, 1);
+  assert.equal(h.events.filter(event => event.event === 'response' && event.completed).length, 2);
+});
+test('policy receipts and provider responses link to the exact decision across reused requests', async t => {
+  const h = await harness(t, { decideImpl: async () => ({ ...answer, tier: 'balanced', effort: 'xhigh' }) });
+  const input = [{ role: 'user', content: 'Implement a bounded feature' }];
+  await (await h.send(input)).text();
+  await (await h.send([...input, { type: 'function_call_output', call_id: '1', output: 'done' }])).text();
+  const decision = h.events.find(event => event.event === 'decision');
+  assert.equal(decision.recommendedEffort, 'xhigh'); assert.equal(decision.effort, 'high');
+  assert.ok(decision.policyTrace.some(step => step.rule === 'effort-ceiling'));
+  assert.equal(decision.policySnapshot.maxEffort, 'high');
+  assert.ok(h.events.filter(event => ['request', 'response'].includes(event.event)).every(event => event.decisionId === decision.decisionId));
+  const responses = h.events.filter(event => event.event === 'response');
+  assert.ok(responses.every(event => Number.isFinite(event.firstByteMs) && event.firstByteMs >= event.providerFirstByteMs));
+  await (await h.send([...input, { role: 'user', content: '네' }])).text();
+  const confirmation = h.events.filter(event => event.event === 'decision').at(-1);
+  assert.notEqual(confirmation.decisionId, decision.decisionId);
+  assert.deepEqual(confirmation.policyTrace.map(step => step.rule), ['confirmation-hold']);
+});
+test('disabled classification has its own receipt and shadow records the route actually applied', async t => {
+  const disabled = await harness(t, { policy: { ...DEFAULTS, sendToJev: false } });
+  await (await disabled.send('Implement a small function')).text();
+  const held = disabled.events.find(event => event.event === 'decision');
+  assert.equal(disabled.decisions(), 0); assert.equal(held.reason, 'jev-disabled');
+  assert.equal(held.policyTrace[0].rule, 'jev-disabled');
+  const shadow = await harness(t, { policy: { ...DEFAULTS, mode: 'shadow' } });
+  await (await shadow.send('Fix a typo')).text();
+  const choice = shadow.events.find(event => event.event === 'decision');
+  assert.equal(choice.proposedModel, DEFAULTS.codex.fast); assert.equal(choice.model, DEFAULTS.codex.balanced);
+  assert.equal(choice.policyTrace.at(-1).rule, 'shadow'); assert.equal(choice.policyTrace.at(-1).after.model, choice.model);
+});
+test('late older-turn tools and retries reuse their original model and decision without changing current state', async t => {
+  let attempts = 0;
+  const h = await harness(t, { decideImpl: async () => ({ ...answer, tier: ++attempts === 1 ? 'fast' : 'frontier' }) });
+  const first = [{ role: 'user', content: 'Correct a heading' }], second = [...first, { role: 'user', content: 'Investigate a difficult bug' }];
+  await (await h.send(first)).text(); await (await h.send(second)).text();
+  const choices = h.events.filter(event => event.event === 'decision'), state = [...h.proxy.sessions.values()][0];
+  const generation = state.generation, latestSequence = state.latestMainSequence;
+  await (await h.send([...first, { type: 'function_call_output', call_id: 'old', output: 'old tool result' }])).text();
+  await (await h.send(first)).text();
+  const late = h.events.filter(event => event.event === 'request').slice(-2);
+  assert.equal(attempts, 2); assert.ok(late.every(event => event.decisionId === choices[0].decisionId && event.model === DEFAULTS.codex.fast));
+  assert.equal(state.route.decisionId, choices[1].decisionId); assert.equal(state.generation, generation);
+  assert.equal(state.latestMainSequence, latestSequence);
+});
+test('unmatched restored tool requests have no invented decision link and cannot update a newer turn', async t => {
+  const h = await harness(t);
+  await (await h.send('Current task')).text();
+  const state = [...h.proxy.sessions.values()][0], lastDone = state.lastDone;
+  await (await h.send([{ role: 'user', content: 'Restored older task' }, { type: 'function_call_output', call_id: 'restored', output: 'done' }])).text();
+  const response = h.events.filter(event => event.event === 'response').at(-1);
+  assert.equal(response.reason, 'tool-continuation-unmatched'); assert.equal(response.decisionId, undefined);
+  assert.equal(state.lastDone, lastDone); assert.equal(h.decisions(), 1);
+});
 test('authenticated inference forwards subscription auth only to original host', async t => {
   const h = await harness(t); const res = await h.send('Fix a typo'); await res.text();
   assert.equal(h.calls[0].url, 'https://chatgpt.com/backend-api/codex/responses');
