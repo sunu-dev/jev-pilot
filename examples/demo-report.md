@@ -17,6 +17,8 @@
 | Observed served model changes | 4 |
 | Selected effort changes | 3 |
 | Cache holds | 2 |
+| Locally rated decisions | 2/9 |
+| Feedback: right / too weak / too strong / too slow / rework | 1 / 1 / 0 / 0 / 0 |
 | Cache-read share of reported input | 85.7% |
 | Route reuse share of automatic requests | 55.6% |
 | Token-count checks (excluded from price comparison) | 0 |

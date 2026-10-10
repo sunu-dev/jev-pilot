@@ -1,6 +1,6 @@
 import { TIERS, EFFORTS } from './config.mjs';
 const rank = t => TIERS.indexOf(t);
-export const isConfirmation = text => /^(?:yes|yes please|ok|okay|go ahead|continue|do it|응|네|예|좋아|진행해|진행해줘|계속|해줘)[.!\s]*$/i.test(text.trim());
+export const isConfirmation = text => /^(?:yes|yes please|ok|okay|go ahead|continue|do it|응|네|예|좋아|진행해|진행해줘|계속|해줘|はい|うん|ええ|了解|了解です|承知しました|お願いします|続けて|続けてください|進めて|進めてください|是的|好|好的|可以|继续|继续吧|请继续|没问题)[.!！。\s]*$/i.test(text.trim());
 function supportedEffort(effort, target, ceiling) {
   const wanted = Math.min(EFFORTS.indexOf(ceiling), Math.max(0, EFFORTS.indexOf(effort)));
   const supported = EFFORTS.filter(e => target.efforts.includes(e));
@@ -31,7 +31,7 @@ export function chooseRoute({ answer, current, policy, models, contextTokens = 0
   if (answer.effortConfidence < policy.minConfidence) effort = current?.effort ?? 'medium';
   if (answer.sensitive || failed) {
     tier = clamp(TIERS[Math.max(rank(tier), answer.sensitive ? rank('strong') : Math.min(3, rank(fallback.tier) + 1))]);
-    effort = 'high'; reason = answer.sensitive ? 'sensitive-work' : 'previous-request-failed';
+    effort = EFFORTS[Math.max(EFFORTS.indexOf(effort), EFFORTS.indexOf('high'))]; reason = answer.sensitive ? 'sensitive-work' : 'previous-request-failed';
   }
   // A same-model capability/effort change does not count as a model switch.
   if (!forced && current && rank(tier) < rank(current.tier) && models[tier].model !== current.model && policy.mode === 'adaptive' && warm && contextTokens > policy.warmTokens) {

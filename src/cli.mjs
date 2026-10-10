@@ -8,9 +8,10 @@ import { loadConfig, loadKey, readCatalog, resolveModels, scopedPolicy, activeMo
 import { createProxy, AUTO } from './proxy.mjs';
 import { createLedger, readLedger } from './ledger.mjs';
 import { summarize, markdown, htmlReport, terminalReport } from './report.mjs';
+import { recordFeedback } from './feedback.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = '0.1.0-alpha.2';
+const VERSION = '0.1.0-alpha.3';
 const help = `Jev Pilot ${VERSION} · sunulab · experimental
 
 jev-pilot init [--key-file /absolute/path/outside/repo.txt]
@@ -20,6 +21,7 @@ jev-pilot codex [--models astra,sol,luna] [Codex arguments...]
 jev-pilot claude [--models opus,sonnet,haiku] [Claude Code arguments...]
 jev-pilot project init [balanced|economy|quality|shadow]
 jev-pilot verify [--live codex|claude|all] [--models]
+jev-pilot feedback right|too-weak|too-strong|too-slow|rework [--agent codex|claude]
 jev-pilot report [--from /path/to/logs] [--agent codex|claude]
                  [--since YYYY-MM-DD] [--html file | --json file | --markdown file]
                  [--open]
@@ -133,6 +135,11 @@ function doctor() {
   console.log('Only a completed live inference verifies model access. No paid calls were made.');
   return checks;
 }
+export function verifiedResponses(events, expectedModel) {
+  const matches = (served, selected) => served === selected || served.startsWith(selected + '-');
+  return events.filter(e => e.event === 'response' && e.completed && typeof e.servedModel === 'string' && typeof e.model === 'string'
+    && matches(e.servedModel, e.model) && (!expectedModel || (e.model === expectedModel && matches(e.servedModel, expectedModel))));
+}
 export async function verifyLive(target, allModels = false) {
   if (!['codex', 'claude', 'all'].includes(target)) throw new Error('--live requires codex, claude or all');
   const results = [];
@@ -147,16 +154,17 @@ export async function verifyLive(target, allModels = false) {
       }) : [null];
       for (const tier of tiers) {
       const workspace = mkdtempSync(join(temp, agent + '-')); process.chdir(workspace);
-      if (tier) writeFileSync(join(workspace, '.jev-pilot.json'), JSON.stringify({ minTier: tier, defaultTier: tier, maxTier: tier, mode: 'turn' }));
+      const expectedModel = tier ? config.policy[agent][tier] : null;
+      if (tier) writeFileSync(join(workspace, '.jev-pilot.json'), JSON.stringify({ minTier: tier, defaultTier: tier, maxTier: tier, mode: 'turn', [`${agent}Models`]: [expectedModel] }));
       const prompt = 'Reply with exactly JEV_PILOT_OK. Do not use any tools or access files.';
       const args = agent === 'codex' ? ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', prompt] : ['-p', prompt, '--max-turns', '1', '--permission-mode', 'plan'];
       const result = await runAgent(agent, args, { quiet: true, verification: true });
       const events = result.logPath ? readLedger(result.logPath).events : [];
       const s = summarize(events);
-      const observed = events.filter(e => e.event === 'response' && e.completed && e.servedModel && (e.servedModel === e.model || e.servedModel.startsWith(e.model + '-')));
+      const observed = verifiedResponses(events, expectedModel);
       const ok = result.code === 0 && s.jevSucceeded > 0 && observed.length > 0;
-      results.push({ agent, tier, ok, jevRequests: s.jevRequests, servedModels: [...new Set(observed.map(e => e.servedModel))] });
-      console.log(`${ok ? 'PASS' : 'FAIL'} ${agent}${tier ? ' / ' + tier : ''}: Jev ${s.jevSucceeded}/${s.jevRequests}, verified responses ${observed.length}`);
+      results.push({ agent, tier, expectedModel, ok, jevRequests: s.jevRequests, servedModels: [...new Set(observed.map(e => e.servedModel))] });
+      console.log(`${ok ? 'PASS' : 'FAIL'} ${agent}${tier ? ' / ' + tier + ' / ' + expectedModel : ''}: Jev ${s.jevSucceeded}/${s.jevRequests}, verified responses ${observed.length}`);
       }
     }
   } finally { process.chdir(cwd); rmSync(temp, { recursive: true, force: true }); }
@@ -206,6 +214,18 @@ export async function main(args = process.argv.slice(2)) {
     if (check.status !== 0) return 1;
     const test = spawnSync(process.execPath, ['--test', ...readJSON(join(ROOT, 'test', 'manifest.json'), []) .map(f => join(ROOT, 'test', f))], { stdio: 'inherit', cwd: ROOT });
     return test.status ?? 1;
+  }
+  if (command === 'feedback') {
+    let agent;
+    for (let i = 1; i < rest.length; i++) {
+      const arg = rest[i];
+      if (agent !== undefined || (arg !== '--agent' && !arg.startsWith('--agent='))) throw new Error('Feedback accepts a rating and one optional --agent codex|claude');
+      agent = arg === '--agent' ? rest[++i] : arg.slice(8);
+      if (!agent || agent.startsWith('-')) throw new Error('--agent requires codex or claude');
+    }
+    const result = recordFeedback({ rating: rest[0], agent });
+    console.log(`Recorded ${result.event.rating} for ${result.event.agent} · ${result.event.model} · ${result.event.effort ?? 'default'} (decision ${result.event.sourceTs}). Local feedback only; routing policy was not changed.`);
+    return 0;
   }
   if (command === 'report') {
     const agent = option(rest, '--agent'), since = option(rest, '--since');

@@ -29,6 +29,22 @@ The dashboard offers English/Korean/Japanese/Chinese, model and token compositio
 - Empty denominators stay unavailable. Malformed records or unfinished requests prevent aggregate net estimates. The dashboard shows a reason when data is incomplete.
 - Allowed automatic models come from session-start metadata. Old sessions remain unrecorded; their observed model mix is not used to guess a scope.
 
+## Inspect a decision and record feedback
+
+The activity table separates the original Jev tier/effort recommendation from the applied model/effort. Expand a recommendation using mouse, keyboard or touch to see the two reported confidence values, optional selected-option probabilities and margins, risk flag and rubric version. Old records stay unknown. Confidence and option probability are different statistics; neither is a calibrated probability that the coding task will succeed. The existing confidence gate is configurable and has not been optimized on a held-out workload.
+
+After reviewing the latest routed turn, optionally run in another terminal:
+
+```sh
+jev-pilot feedback right --agent codex
+jev-pilot feedback too-weak --agent codex
+jev-pilot feedback rework --agent claude
+```
+
+Ratings are `right`, `too-weak`, `too-strong`, `too-slow`, `rework`. The target is the latest decision for that tool across **all local projects and runs**, not the terminal's current directory. Check the model and timestamp printed by the command. Omit `--agent` only when the newest decision across both tools is intended. Ambiguous latest runs, unreadable logs or unknown options are rejected before recording. Record immediately after reviewing the intended turn; concurrent sessions can create a newer decision.
+
+Feedback creates an owner-only metadata event linked to the decision, without editing its source log. Corrections count only the latest rating for each decision. Reports include feedback only for decisions selected by the report's tool/date/run filters; later feedback remains associated with the original decision date. Feedback files do not inflate runs, periods, requests or costs. These voluntary ratings have selection bias and are not task-success measurements. Pilot does not automatically retrain or change routing from them.
+
 ## Configure prices
 
 Edit `~/.config/jev-pilot/config.json`. Keep the existing `keyFile` and policy fields. Rates are **USD per million tokens**, not per token. Use current official rates for your exact models and record the date/source for your own comparison. No potentially stale public prices are bundled.

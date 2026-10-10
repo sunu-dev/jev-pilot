@@ -1,6 +1,6 @@
 {
   "name": "@sunulab/jev-pilot",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Local, observable Jev routing for Codex CLI and Claude Code subscription sessions.",
   "type": "module",
   "license": "Apache-2.0",
@@ -10,5 +10,5 @@
   "engines": { "node": ">=22" },
   "bin": { "jev-pilot": "bin/jev-pilot.mjs", "pilot-codex": "bin/pilot-codex.mjs", "pilot-claude": "bin/pilot-claude.mjs" },
   "files": ["bin", "src", "vendor", "docs", "examples", "test", "scripts", "README.md", "README.ko.md", "LICENSE", "NOTICE", "SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"],
-  "scripts": { "test": "node --test test/*.test.mjs", "check": "node scripts/check.mjs", "demo": "node scripts/demo.mjs", "verify": "npm run check && npm test" }
+  "scripts": { "test": "node --test test/*.test.mjs", "check": "node scripts/check.mjs", "demo": "node scripts/demo.mjs", "eval:routing": "node scripts/evaluate-routing.mjs", "verify": "npm run check && npm test" }
 }

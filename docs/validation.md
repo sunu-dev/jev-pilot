@@ -13,6 +13,12 @@ Before promoting a stable release:
 
 Report sample size, task selection, exact versions, policy, rates/date, baseline, missing usage, reruns and exclusions. No default “saved X%” claim or extrapolation from a synthetic demo.
 
+## Classifier rubric checks
+
+`npm run eval:routing` validates 24 authored development cases offline and makes zero API calls. The cases include four languages, short difficult tasks, polished UI/content work, a long simple request, visual context and security explanations versus changes. Schema tests and mocked classifications verify the evaluator; they do not establish Jev label accuracy.
+
+Explicit `npm run eval:routing -- --live --out /tmp/routing-eval.json` makes one paid Jev call per case, at most 32 cases, sequentially with no retries. It requires a key and enabled `sendToJev`, reserves an exclusive owner-only output before calls, and records rubric disagreement/errors, latency, token coverage and a question fingerprint without prompts/raw responses. It compares raw classifier output before scope/effort clamps. Language counts are diagnostics because the languages contain different tasks. These authored expectations are not held-out labels; broad tier/effort intervals cannot fully express a model/effort tradeoff such as Sol xhigh versus Astra medium. Use independent held-out tasks and actual provider executions for quality or savings conclusions.
+
 ## Community pilot
 
 Ask volunteers to run `doctor`, offline tests and live checks, then work on a task they can independently review. An aggregate JSON export is optional. The user reviews and submits it themselves; Pilot has no upload endpoint. Start with installation success, verified completion, downgrade behavior and cache coverage before optimizing star growth.

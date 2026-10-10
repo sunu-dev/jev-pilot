@@ -27,6 +27,26 @@ test('sensitive changes get at least strong within configured ceiling', () => {
   assert.equal(call({ answer: { ...a(), sensitive: true }, policy: { ...DEFAULTS, maxTier: 'balanced' } }).tier, 'balanced');
 });
 test('provider failure increases capability on next classified request', () => assert.equal(call({ failed: true, current: { tier: 'balanced', model: models.balanced.model } }).tier, 'strong'));
+test('safety and failure guards preserve reasoning above their high minimum', () => {
+  for (const flags of [{ sensitive: true }, { failed: true }]) {
+    for (const effort of ['low', 'xhigh', 'max']) {
+      const r = call({ answer: { ...a('balanced', effort), sensitive: flags.sensitive }, failed: flags.failed,
+        policy: { ...DEFAULTS, maxEffort: 'max' } });
+      assert.equal(r.effort, effort === 'low' ? 'high' : effort);
+      assert.equal(r.tier, 'strong');
+    }
+  }
+});
+test('guard reasoning floors still respect effort ceilings, model support and a single-model scope', () => {
+  for (const flags of [{ sensitive: true }, { failed: true }]) {
+    const extra = { answer: { ...a('fast', 'max'), sensitive: flags.sensitive }, failed: flags.failed };
+    assert.equal(call({ ...extra, policy: { ...DEFAULTS, maxEffort: 'medium' } }).effort, 'medium');
+    const limited = { ...models, strong: { ...models.strong, efforts: ['low', 'medium'] } };
+    assert.equal(call({ ...extra, models: limited, policy: { ...DEFAULTS, maxEffort: 'max' } }).effort, 'medium');
+    const single = call({ ...scoped(['luna'], { maxEffort: 'max' }), ...extra });
+    assert.equal(single.model, DEFAULTS.codex.fast); assert.equal(single.effort, 'high');
+  }
+});
 test('effort is capped and unsupported levels are clamped downward', () => {
   assert.equal(call({ answer: a('balanced', 'max') }).effort, 'high');
   const limited = { ...models, balanced: { ...models.balanced, efforts: ['low', 'medium'] } };
@@ -35,6 +55,10 @@ test('effort is capped and unsupported levels are clamped downward', () => {
 test('Haiku without effort capability does not get effort', () => assert.equal(call({ models: { ...models, fast: { model: 'claude-haiku-4-5', efforts: [] } } }).effort, null));
 test('short Korean confirmations inherit previous task but real requests do not', () => {
   assert.ok(isConfirmation('응')); assert.ok(isConfirmation('계속')); assert.ok(!isConfirmation('응 인증 오류도 수정해줘'));
+});
+test('standalone Japanese and Chinese confirmations match without swallowing new work or questions', () => {
+  for (const text of ['はい', '了解です。', '続けてください！', '  進めて  ', '好的', '可以。', '请继续！', '没问题']) assert.ok(isConfirmation(text), text);
+  for (const text of ['はい、認証エラーも修正して', '続けていいですか？', 'いいえ', '好的，修改登录错误', '可以吗？', '不要继续', '不可以', '继续调查这个问题']) assert.ok(!isConfirmation(text), text);
 });
 test('policy rejects remote destinations and invalid limits', () => {
   assert.throws(() => validatePolicy({ ...DEFAULTS, upstream: 'https://example.com' }));

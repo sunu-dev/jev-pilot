@@ -9,7 +9,9 @@ Pilot is a bounded subscription-session adapter, not a general-purpose multi-pro
 5. Rewrite model and supported effort while preserving the original inference request and first-party credentials. In-session concrete model requests bypass automatic rewriting. Token counting and auxiliary work do not ask Jev.
 6. Stream bytes unchanged. Observe terminal status, served model and token usage. Persist only allowed metadata.
 
-Each sub-agent thread is separated when Codex supplies a thread ID. Requests that already name a real model pass through; automatic sub-agent coverage is not guaranteed. A finished sub-agent notification is not treated as a new human turn. Concurrency tests cover duplicate requests for a single turn; production cancellation, compaction/resume and multiple parallel agents need further validation.
+Each sub-agent thread is separated when Codex supplies a thread ID. Requests that already name a real model pass through; automatic sub-agent coverage is not guaranteed. A finished sub-agent notification is not treated as a new human turn. A per-session classifier lock shares duplicate work and serializes distinct turns. Generation and request-sequence guards prevent stale upstream completions from replacing current routing memory; those requests remain observable in the ledger. Production cancellation, compaction/resume and multiple parallel agents need further validation.
+
+The ledger preserves the original Jev recommendation separately from the applied route and policy reason. Confidence, optional choice distributions and margins are diagnostics, not calibrated task-success probabilities. Voluntary feedback is linked locally to a decision and never changes routing automatically.
 
 No provider retries, cross-provider fallback, persistent routing state, CLI configuration edits, account synchronization or community report upload are performed. The proxy dies with the child. Failure of report storage does not stop inference.
 

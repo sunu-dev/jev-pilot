@@ -38,6 +38,15 @@ The question is not just “which model?” It is **“did it switch, why did it
 
 Needs Node.js **22+**, a working `codex` and/or `claude` on PATH, and its existing subscription login. Source installation is intended for macOS/Linux. Do not uninstall your original CLI.
 
+Pinned release package (no permanent source checkout needed):
+
+```sh
+npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.3/sunulab-jev-pilot-0.1.0-alpha.3.tgz
+jev-pilot verify
+```
+
+Or install from source for development:
+
 ```sh
 git clone https://github.com/sunu-dev/jev-pilot.git
 cd jev-pilot
@@ -45,7 +54,7 @@ npm run verify
 node bin/jev-pilot.mjs install
 ```
 
-Installation adds `jev-pilot`, `pilot-codex` and `pilot-claude` to `~/.local/bin`. Add that directory to PATH if necessary. The source directory must stay in place. It does not replace `codex`, `claude`, or an existing `jev-codex`.
+The npm package adds `jev-pilot`, `pilot-codex` and `pilot-claude` to your npm global executable directory. Source installation links them into `~/.local/bin`; add that directory to PATH if necessary and keep the source directory in place. Neither method replaces `codex`, `claude`, or an existing `jev-codex`.
 
 Store your **raw TypeSafe key outside this repository** in an owner-readable file. Then register only the file path:
 
@@ -148,6 +157,12 @@ flowchart LR
 Defaults have four capability tiers, with `maxEffort: high`. Strong and frontier may share a model; effort is independently selected. Codex's local catalog limits supported effort and checks configured model IDs. The catalog is **not** proof of plan access. Claude capabilities currently use a configured allowlist. [Configuration](docs/configuration.md) · [Design](docs/design.md).
 
 Jev failures keep the current route, or the configured default at session start, subject to the attached-image floor. Confirmations such as “yes” or “응” inherit the current task. No automatic provider retry is performed by Pilot; your CLI may retry requests. Providers may charge for unsuccessful requests.
+
+For stable-model automatic effort selection, use `pilot-codex --models sol`. Long conversations can benefit from preserving a model's cache; compare actual work before choosing more frequent switches. The classifier considers ambiguity, visual judgement and requested completeness as well as difficulty. Default effort is capped at high; the quality preset permits xhigh. [Community findings and remaining evidence](docs/community-routing-research.ko.md).
+
+Review the result and optionally record the latest decision with `jev-pilot feedback too-weak --agent codex` (also `right`, `too-strong`, `too-slow`, `rework`). The command prints its target timestamp/model; the target spans all local projects for that tool. Feedback stays local, does not auto-train routing, and appears separately from response completion in the report. [Details and limitations](docs/reporting.md#inspect-a-decision-and-record-feedback).
+
+`npm run eval:routing` checks the authored multilingual case schema offline. Explicit `--live --out` evaluates only the classifier with paid Jev calls; it is not a task-quality or savings benchmark. [Evaluation plan](docs/validation.md#classifier-rubric-checks).
 
 ## Privacy and credentials
 

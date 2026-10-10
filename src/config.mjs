@@ -19,7 +19,7 @@ export const dataHome = () => process.env.JEV_PILOT_DATA_HOME || join(homedir(),
 export const expand = p => p?.startsWith('~/') ? join(homedir(), p.slice(2)) : p;
 export function readJSON(file, fallback) {
   if (!existsSync(file)) return fallback;
-  try { return JSON.parse(readFileSync(file, 'utf8')); } catch { throw new Error(`Invalid JSON in ${file}`); }
+  try { return JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch { throw new Error(`Invalid JSON in ${file}`); }
 }
 export function findProject(start) {
   for (let dir = resolve(start);; dir = dirname(dir)) {

@@ -7,7 +7,7 @@ Author verification: **2026-10-10**, macOS arm64, Node.js 24.4.1. These results 
 | Codex CLI | 0.160.1 | ChatGPT subscription | `gpt-6-luna`, `gpt-6.1-sol`, `gpt-6-astra` |
 | Claude Code | 2.1.295 | Claude Max subscription | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` |
 
-Run `jev-pilot verify --live all --models` to test every distinct configured model. This makes paid TypeSafe requests and uses provider allowance. Each check constrains the capability bounds to one tier, submits a tiny prompt through the original CLI, and requires a valid Jev decision plus a completed provider response reporting the selected model. It verifies connectivity and model access; it does not test Jev's ability to rank real work. Default `--live codex` or `--live claude` checks one unconstrained decision instead.
+Run `jev-pilot verify --live all --models` to test every distinct globally configured model. This makes paid TypeSafe requests and uses provider allowance. Each check isolates one physical model from global model scopes, submits a tiny prompt through the original CLI, and requires a valid Jev decision plus a completed provider response reporting that expected model. Checks run in a temporary project; model mappings defined only in the current project's policy are not loaded. It verifies connectivity and model access; it does not test Jev's ability to rank real work. Default `--live codex` or `--live claude` checks one unconstrained decision instead.
 
 Three additional author-written Korean probe prompts were sent to the real classifier without forcing tiers:
 
@@ -22,6 +22,7 @@ These probes show that classification can distinguish difficulty and that policy
 ## What is covered
 
 - Alpha.2 model scopes, multilingual trailing commands and image floors are covered by offline integration tests; the live model-access checks above were made for alpha.1 and do not independently establish long-session behavior of the new policies.
+- Alpha.3 adds offline checks for stale/parallel responses, replaced images, recommendation diagnostics, local feedback and the authored evaluation runner. No new paid classifier evaluation or provider smoke check was run for alpha.3.
 - Offline integration tests use fake upstreams to check same-turn/tool continuation, parallel duplicate classification, manual model passthrough, shadow mode, secret holds, warm-context downgrades and independent effort selection.
 - Stream tests relay Korean UTF-8 split at every byte and handle subscription responses without a Content-Type header. HTTP 200 without a terminal completion is not accepted as success.
 - Installation/uninstall tests protect existing commands. Report tests preserve unknown/missing usage, incomplete requests and negative estimates.
@@ -31,6 +32,7 @@ These probes show that classification can distinguish difficulty and that policy
 
 - Native smoke checks cover short sessions. Resume, very long conversations, compaction, multi-agent isolation and interactive `/model` transitions still need independent live validation. Tool/sub-agent message shapes are covered by fixtures, not every future CLI variant.
 - Routing state is in memory for the launcher process. Restarting loses downgrade streaks. Cache warmth is a usage/time heuristic, not a provider guarantee; model switches can discard cache reuse.
+- Codex advertises the smallest context window among allowed models for the automatic session. Claude uses a conservative 200k model context and a 160k auto-compaction hint. Routing does not preserve a native 1M context configuration; MCP tool search, context display and compaction behavior need direct comparison in the user's environment.
 - Codex's local catalog checks model IDs and effort levels but does not prove account access. Claude effort capability uses a static allowlist. Model IDs/defaults will need updates as providers change.
 - CLI versions matter. An older Claude Code installation (2.0.10) rejected the configured newer models in author testing. `doctor` displays the executable's version; see [binary selection](configuration.md#choosing-the-original-cli).
 - Source symlink installation targets macOS/Linux. Windows is unverified. Codex desktop application sessions are not routed; launch the CLI using `pilot-codex`.

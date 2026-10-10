@@ -3,16 +3,18 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { dataHome } from './config.mjs';
 
-const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode', 'allowedModels']);
-export function createLedger({ dir = join(dataHome(), 'logs'), agent, warn = () => {} } = {}) {
+const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode', 'allowedModels',
+  'decisionId', 'recommendedTier', 'recommendedEffort', 'effortConfidence', 'sensitive', 'riskConfidence', 'capabilityProbability', 'capabilityMargin', 'effortProbability', 'effortMargin', 'rubricVersion',
+  'rating', 'sourceRun', 'sourceTs', 'sourceSession', 'sourceDecision']);
+export function createLedger({ dir = join(dataHome(), 'logs'), agent, warn = () => {}, now = () => new Date().toISOString() } = {}) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const run = randomUUID();
-  const path = join(dir, `${new Date().toISOString().replaceAll(':', '-')}-${run}.jsonl`);
+  const path = join(dir, `${now().replaceAll(':', '-')}-${run}.jsonl`);
   let fd = openSync(path, 'wx', 0o600), bytes = 0, warned = false;
   const log = data => {
     if (fd === null) return;
     const event = Object.fromEntries(Object.entries(data).filter(([k]) => FIELDS.has(k)));
-    const line = JSON.stringify({ schema: 1, ts: new Date().toISOString(), run, agent, ...event }) + '\n';
+    const line = JSON.stringify({ schema: 1, ts: now(), run, agent, ...event }) + '\n';
     try {
       if (bytes + Buffer.byteLength(line) > 50 * 1024 * 1024) throw new Error('log-limit');
       writeSync(fd, line); bytes += Buffer.byteLength(line);

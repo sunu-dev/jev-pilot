@@ -1,0 +1,319 @@
+[
+  {
+    "id": "en-rename",
+    "language": "en",
+    "rubric": "mechanical",
+    "text": "Rename the local variable tmp to elapsedMs in this function. Keep behavior unchanged.",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "en-short-hard",
+    "language": "en",
+    "rubric": "short-hard",
+    "text": "Prove that our distributed quota reservation is linearizable across crashes and retries; find a counterexample if it is not.",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "en-long-simple",
+    "language": "en",
+    "rubric": "long-simple",
+    "text": "I am adding a small changelog entry for our team. We have discussed naming conventions, onboarding, release notes, and many other concerns. None requires implementation here. Please do exactly one mechanical edit: change the heading 'Release notes' to 'Changelog'. Preserve everything else, including spacing, links, order, punctuation, and formatting. There is no research, design or architectural decision to make. The surrounding background is only context for this heading replacement.",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "en-polished-system",
+    "language": "en",
+    "rubric": "polished-design",
+    "text": "Deliver a polished, coherent visual system across the dashboard, details, empty states and mobile views. Reconcile conflicting stakeholder requirements, explain hierarchy choices, and verify accessibility and interactions end to end.",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "en-security-explain",
+    "language": "en",
+    "rubric": "security-explanation",
+    "text": "Explain what HTTP-only cookies mean in three plain sentences. Do not modify any application or security settings.",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium",
+    "expectedSensitive": false
+  },
+  {
+    "id": "en-security-change",
+    "language": "en",
+    "rubric": "security-change",
+    "text": "Replace our production session handling with rotating refresh tokens, detect replay, migrate existing sessions safely and cover concurrent refresh requests with tests.",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max",
+    "expectedSensitive": true
+  },
+  {
+    "id": "ko-rename",
+    "language": "ko",
+    "rubric": "mechanical",
+    "text": "이 함수 안의 지역 변수 tmp를 elapsedMs로 바꿔줘. 동작은 그대로 유지해.",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "ko-short-hard",
+    "language": "ko",
+    "rubric": "short-hard",
+    "text": "장애와 재시도가 겹쳐도 이 분산 한도 예약이 선형화 가능한지 증명하고 반례를 찾아줘.",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ko-ui-research",
+    "language": "ko",
+    "rubric": "visual-research",
+    "text": "첨부 화면에서 이 섹터의 대장주와 연결된 기업 관계를 궁금해서 더 탐색하게 만들고 싶어. 나무위키처럼 내용 구조를 연구하고, 부족한 정보와 시각적 계층을 판단해서 모바일까지 자연스럽게 이어지는 디자인을 제안해줘.",
+    "images": 1,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ko-ambiguous",
+    "language": "ko",
+    "rubric": "ambiguity",
+    "text": "이 화면이 아직 부족한데, 정보가 많으면서도 복잡하지 않게 해줘. 무엇이 부족한지 가설을 세우고 서로 충돌하는 목표를 정리한 다음 구체적인 개선안을 만들어줘.",
+    "images": 1,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ko-repeat-correction",
+    "language": "ko",
+    "rubric": "repeat-correction",
+    "text": "같은 버그가 세 번째 다시 발생했어. 이전 두 수정은 증상만 가렸어. 재현 조건을 좁히고 이벤트 순서와 상태 전이를 추적해서 근본 원인을 검증해줘.",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ko-security-explain",
+    "language": "ko",
+    "rubric": "security-explanation",
+    "text": "CSRF가 무엇인지 초보자에게 짧게 설명해줘. 코드나 보안 설정을 변경하는 요청은 아니야.",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium",
+    "expectedSensitive": false
+  },
+  {
+    "id": "ja-rename",
+    "language": "ja",
+    "rubric": "mechanical",
+    "text": "この関数内のローカル変数 tmp を elapsedMs に変更してください。動作は変えないでください。",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "ja-short-hard",
+    "language": "ja",
+    "rubric": "short-hard",
+    "text": "クラッシュと再試行が重なっても、この分散クォータ予約が線形化可能か証明し、成立しなければ反例を示して。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ja-long-simple",
+    "language": "ja",
+    "rubric": "long-simple",
+    "text": "チームのリリース資料を整えています。背景には新規メンバーの参加、利用者への説明、用語統一、今後の改善計画がありますが、今回は調査や設計は必要ありません。作業は見出しの「リリース情報」を「変更履歴」に置き換えることだけです。順番、リンク、空白、句読点、他の文章は維持してください。背景説明が長くても、それに関する機能を追加する必要はありません。単純な文字列置換をお願いします。",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "ja-polished-system",
+    "language": "ja",
+    "rubric": "polished-design",
+    "text": "ダッシュボード、詳細、空の状態、モバイル画面を一貫した完成度の高いデザインにまとめて。相反する要求を整理し、情報階層とアクセシビリティ、画面間の操作まで検証してください。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ja-ui-research",
+    "language": "ja",
+    "rubric": "visual-research",
+    "text": "添付画面の業界を代表する企業と関連企業の関係を、もっと読み進めたくなる形にしたい。必要な情報を調査し、百科事典のような探索構造と視覚的な優先順位を提案して。",
+    "images": 1,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "ja-security-change",
+    "language": "ja",
+    "rubric": "security-change",
+    "text": "本番環境の認証を更新トークンのローテーション方式に移行し、リプレイ攻撃と同時更新を考慮して、既存セッションの安全な移行とテストも実装して。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max",
+    "expectedSensitive": true
+  },
+  {
+    "id": "zh-rename",
+    "language": "zh",
+    "rubric": "mechanical",
+    "text": "把这个函数里的局部变量 tmp 重命名为 elapsedMs，保持行为不变。",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium"
+  },
+  {
+    "id": "zh-short-hard",
+    "language": "zh",
+    "rubric": "short-hard",
+    "text": "证明这个分布式配额预留在崩溃和重试交错时是否满足线性一致性；不满足就找反例。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "zh-ambiguous",
+    "language": "zh",
+    "rubric": "ambiguity",
+    "text": "这个页面还是不够好，要信息丰富但又不复杂。请分析附图中缺少的内容，提出假设，处理相互冲突的目标，再给出具体的改进方案。",
+    "images": 1,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "zh-repeat-correction",
+    "language": "zh",
+    "rubric": "repeat-correction",
+    "text": "同一个问题第三次出现了，前两次修改只隐藏了症状。请缩小复现条件，追踪事件顺序和状态变化，并验证根本原因。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "zh-polished-system",
+    "language": "zh",
+    "rubric": "polished-design",
+    "text": "请完成一套精致且一致的视觉系统，覆盖仪表盘、详情页、空状态和移动端。协调相互冲突的需求，解释信息层级，并全面验证无障碍和页面间交互。",
+    "images": 0,
+    "allowedTiers": [
+      "strong",
+      "frontier"
+    ],
+    "minEffort": "high",
+    "maxEffort": "max"
+  },
+  {
+    "id": "zh-security-explain",
+    "language": "zh",
+    "rubric": "security-explanation",
+    "text": "用三句通俗的话解释什么是刷新令牌，不要修改代码或安全配置。",
+    "images": 0,
+    "allowedTiers": [
+      "fast",
+      "balanced"
+    ],
+    "minEffort": "low",
+    "maxEffort": "medium",
+    "expectedSensitive": false
+  }
+]

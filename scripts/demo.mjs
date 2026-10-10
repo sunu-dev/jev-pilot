@@ -11,7 +11,7 @@ const models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-astra', 'gpt-6-astra', 'gpt
 for (const [i, model] of models.entries()) {
   emit({ event: 'jev_request' });
   emit({ event: 'jev_result', ok: true, inputTokens: 300, outputTokens: 6, ms: 300 + i * 30, jevCost: 0.0001 });
-  emit({ event: 'decision', model, effort: i === 1 ? 'high' : 'low', reason: i === 2 || i === 3 ? 'cache-hold' : i === 4 ? 'sustained-downgrade' : 'jev', modelChanged: i > 0 && models[i - 1] !== model, effortChanged: i === 1 || i === 2 });
+  emit({ event: 'decision', decisionId: `synthetic-choice-${i}`, recommendedTier: i === 1 ? 'frontier' : i > 1 && i < 5 ? 'fast' : 'balanced', recommendedEffort: i === 1 ? 'xhigh' : 'low', confidence: 0.87, effortConfidence: 0.81, capabilityProbability: 0.91, capabilityMargin: 0.86, model, effort: i === 1 ? 'high' : 'low', reason: i === 2 || i === 3 ? 'cache-hold' : i === 4 ? 'sustained-downgrade' : 'jev', modelChanged: i > 0 && models[i - 1] !== model, effortChanged: i === 1 || i === 2 });
   for (let j = 0; j < 2; j++) {
     const request = `synthetic-${i}-${j}`;
     emit({ event: 'request', request, model, reason: j ? 'continuation' : 'jev' });
@@ -37,6 +37,8 @@ for (const [i, model] of ['claude-sonnet-5-5', 'claude-haiku-5-5'].entries()) {
   }
 }
 claude({ event: 'session_end' });
+emit({ event: 'feedback', sourceDecision: 'synthetic-choice-0', rating: 'right', run: 'synthetic-feedback-1' });
+emit({ event: 'feedback', sourceDecision: 'synthetic-choice-4', rating: 'too-weak', run: 'synthetic-feedback-2' });
 mkdirSync(resolve(root, 'examples'), { recursive: true });
 const summary = summarize(events);
 writeFileSync(resolve(root, 'examples/demo.jsonl'), events.map(e => JSON.stringify(e)).join('\n') + '\n');

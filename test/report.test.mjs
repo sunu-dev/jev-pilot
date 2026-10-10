@@ -14,6 +14,27 @@ test('reports distinguish classifier calls, decisions, changes and provider requ
     e({ event: 'request', request: '1' }), e({ event: 'response', request: '1', model: 'gpt-example', completed: true })]);
   assert.equal(s.jevRequests, 1); assert.equal(s.decisions, 2); assert.equal(s.modelChanges, 1); assert.equal(s.responses, 1); assert.equal(s.usageCoverage, 0);
 });
+test('local feedback counts latest verdict per decision without inflating runs, requests or period', () => {
+  const decision = e({ event: 'decision', decisionId: 'choice-1', session: 's', model: 'gpt-example', recommendedTier: 'strong', recommendedEffort: 'xhigh', confidence: 0.7, effortConfidence: 0.8 });
+  const feedback = (rating, ts, run) => e({ event: 'feedback', rating, ts, run, sourceDecision: 'choice-1', sourceRun: 'fixture', sourceSession: 's', sourceTs: base.ts });
+  const events = [decision, feedback('too-weak', '2026-10-11T12:00:00Z', 'feedback-1'), feedback('right', '2026-10-12T12:00:00Z', 'feedback-2'), e({ event: 'feedback', sourceDecision: 'unrelated', rating: 'rework' })];
+  const s = summarize(events, { run: 'fixture' });
+  assert.equal(s.runs, 1); assert.equal(s.requests, 0); assert.equal(s.period.end, base.ts);
+  assert.equal(s.feedback.ratedDecisions, 1); assert.equal(s.feedback.ratings.right, 1); assert.equal(s.feedback.ratings['too-weak'], 0);
+  assert.equal(s.timeline[0].feedback, 'right'); assert.equal(s.timeline[0].recommendedEffort, 'xhigh');
+  assert.equal(s.timeline[0].confidence, 0.7); assert.equal(s.timeline[0].effortConfidence, 0.8);
+  assert.equal(summarize(events, { agent: 'claude' }).feedback.ratedDecisions, 0);
+  assert.equal(summarize(events, { since: '2026-10-11' }).feedback.ratedDecisions, 0);
+});
+test('legacy feedback uses run/session/time and leaves unrated or orphan decisions unknown', () => {
+  const s = summarize([e({ event: 'decision', session: 'legacy' }), e({ event: 'decision', session: 'unrated' }), e({ event: 'feedback', rating: 'rework', sourceRun: 'fixture', sourceSession: 'legacy', sourceTs: base.ts })]);
+  assert.equal(s.feedback.ratedDecisions, 1); assert.equal(s.feedback.totalDecisions, 2);
+  assert.equal(s.feedback.ratings.rework, 1); assert.equal(s.timeline[1].feedback, null);
+});
+test('feedback corrections use chronological fractional timestamps rather than string ordering', () => {
+  const s = summarize([e({ event: 'decision', decisionId: 'choice' }), e({ event: 'feedback', sourceDecision: 'choice', rating: 'right', ts: '2026-10-10T12:01:00.11Z' }), e({ event: 'feedback', sourceDecision: 'choice', rating: 'too-weak', ts: '2026-10-10T12:01:00.1Z' })]);
+  assert.equal(s.feedback.ratings.right, 1); assert.equal(s.feedback.ratings['too-weak'], 0);
+});
 test('missing price or Jev usage cannot become zero-cost savings', () => {
   const s = summarize([e({ event: 'jev_result', ok: true }), e({ event: 'response', cost: 0.1, baselineCost: 0.5 })]);
   assert.equal(s.estimates.netDifference, null); assert.equal(s.estimates.jevCost, null);

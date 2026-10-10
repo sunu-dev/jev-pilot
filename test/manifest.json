@@ -1,1 +1,1 @@
-["policy.test.mjs", "proxy.test.mjs", "report.test.mjs", "cli.test.mjs", "jev.test.mjs", "stream-header.test.mjs", "override.test.mjs"]
+["policy.test.mjs", "proxy.test.mjs", "report.test.mjs", "cli.test.mjs", "jev.test.mjs", "stream-header.test.mjs", "override.test.mjs", "feedback.test.mjs", "routing-eval.test.mjs"]

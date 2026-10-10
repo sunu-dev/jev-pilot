@@ -49,28 +49,32 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
     let state = sessions.get(session);
     if (!state) {
       if (sessions.size >= 1000) { for (const [id, old] of sessions) if (!old.flight) { sessions.delete(id); break; } }
-      state = { streak: 0 }; sessions.set(session, state);
+      state = { streak: 0, generation: 0, requestSequence: 0 }; sessions.set(session, state);
     }
-    const fallback = state.route ?? chooseRoute({ policy, models, visual: latest?.images > 0 });
+    const fallback = () => state.route ?? chooseRoute({ policy, models, visual: latest?.images > 0 });
+    const snapshot = (route, rewrite = true, generation = state.generation) => ({ session, route: { ...route }, state, rewrite, generation, sequence: ++state.requestSequence });
     const kind = req.headers['x-claude-code-request-class'] ?? req.headers['x-anthropic-request-kind'];
-    if (body.model !== AUTO) return { session, route: { model: body.model, effort: body.reasoning?.effort ?? body.output_config?.effort ?? null, reason: 'manual' }, state, rewrite: false };
-    if (kind && !['main', 'user'].includes(kind)) return { session, route: { ...fallback, reason: 'auxiliary' }, state, rewrite: true };
+    if (body.model !== AUTO) return snapshot({ model: body.model, effort: body.reasoning?.effort ?? body.output_config?.effort ?? null, reason: 'manual' }, false);
+    if (kind && !['main', 'user'].includes(kind)) return snapshot({ ...fallback(), reason: 'auxiliary' });
     const tail = items(body).slice((latest?.index ?? -1) + 1);
     const hasToolTail = tail.some(i => ['function_call', 'function_call_output', 'custom_tool_call', 'custom_tool_call_output'].includes(i?.type) || (Array.isArray(i?.content) && i.content.some(c => ['tool_use', 'tool_result'].includes(c?.type))));
-    if (!latest || hasToolTail) return { session, route: { ...fallback, reason: latest ? 'tool-continuation' : 'tool-or-auxiliary' }, state, rewrite: true };
-    const turn = hash([turns.length, latest.text, latest.images]);
-    if (state.turn === turn) {
-      if (state.flight) await state.flight;
-      return { session, route: { ...(state.route ?? fallback), reason: 'continuation' }, state, rewrite: true };
+    if (!latest || hasToolTail) {
+      while (state.flight) await state.flight;
+      return snapshot({ ...fallback(), reason: latest ? 'tool-continuation' : 'tool-or-auxiliary' });
     }
-    if (state.flight) await state.flight;
-    // Same new turn may have waited for another classifier while it was being initialized.
-    if (state.turn === turn) return { session, route: { ...state.route, reason: 'continuation' }, state, rewrite: true };
+    const content = items(body)[latest.index]?.content;
+    // An edited screenshot can keep the same text and image count. Its private digest stays in memory.
+    const imageFingerprint = hash(Array.isArray(content) ? content.filter(part => ['image', 'input_image'].includes(part?.type)) : []);
+    const turn = hash([turns.length, latest.text, latest.images, imageFingerprint]);
+    // Recheck after every wait: several different turns can share the first in-flight decision.
+    while (state.flight) await state.flight;
+    if (state.turn === turn) return snapshot({ ...fallback(), reason: 'continuation' });
     if (state.lastTurns !== undefined && turns.length < state.lastTurns) { state.contextTokens = 0; state.lastDone = 0; state.streak = 0; }
     state.lastTurns = turns.length;
     state.turn = turn;
+    const generation = ++state.generation;
     const run = async () => {
-      let proposed;
+      let proposed, recommendation;
       const explicit = trailingOverride(latest.text);
       if (explicit) {
         try {
@@ -80,7 +84,7 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
           const limited = proposed.model !== requested[agent][tier] || (explicit.effort && proposed.effort !== explicit.effort);
           proposed.reason = limited ? 'user-override-limited' : 'user-override';
           if (limited) notice('[Jev Pilot] Requested model/effort was limited by the allowed models, effort ceiling or model capability.');
-        } catch { proposed = { ...fallback, reason: 'user-override-unavailable', streak: 0 }; notice('[Jev Pilot] Requested model is not configured for this tool; keeping the default/current route.'); }
+        } catch { proposed = { ...fallback(), reason: 'user-override-unavailable', streak: 0 }; notice('[Jev Pilot] Requested model is not configured for this tool; keeping the default/current route.'); }
       }
       else if (isConfirmation(latest.text) && state.route) proposed = { ...state.route, reason: 'confirmation-hold', streak: 0 };
       else if (findSecrets(latest.text).length) proposed = { ...chooseRoute({ current: state.route, policy, models, visual: latest.images > 0 }), reason: 'secret-not-sent', streak: 0 };
@@ -95,24 +99,30 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
               log({ ...e, session, jevCost: estimate });
             } else log({ ...e, session });
           } });
+        if (answer?.ok) recommendation = { recommendedTier: answer.tier, recommendedEffort: answer.effort,
+          confidence: answer.confidence, effortConfidence: answer.effortConfidence, sensitive: answer.sensitive, riskConfidence: answer.riskConfidence,
+          capabilityProbability: answer.capabilityProbability, capabilityMargin: answer.capabilityMargin,
+          effortProbability: answer.effortProbability, effortMargin: answer.effortMargin, rubricVersion: answer.rubricVersion };
         proposed = chooseRoute({ answer, current: state.route, policy, models, streak: state.streak, failed: state.failed,
           visual: latest.images > 0,
           contextTokens: state.contextTokens ?? 0, warm: Date.now() - (state.lastDone ?? 0) < policy.cacheIdleMinutes * 60000 });
       }
       state.streak = proposed.streak ?? 0;
-      const selected = policy.mode === 'shadow' ? { ...fallback, reason: 'shadow' } : proposed;
+      const selected = policy.mode === 'shadow' ? { ...fallback(), reason: 'shadow' } : proposed;
       const previous = state.route;
       state.route = selected;
       state.failed = false;
-      log({ event: 'decision', session, tier: selected.tier, model: safeModel(selected.model), effort: selected.effort, reason: selected.reason,
+      log({ event: 'decision', decisionId: randomUUID(), session, tier: selected.tier, model: safeModel(selected.model), effort: selected.effort, reason: selected.reason,
         fromModel: safeModel(previous?.model), fromEffort: previous?.effort ?? null,
         modelChanged: Boolean(previous && previous.model !== selected.model), effortChanged: Boolean(previous && previous.effort !== selected.effort),
-        shadow: policy.mode === 'shadow', proposedModel: safeModel(proposed.model), proposedEffort: proposed.effort });
+        shadow: policy.mode === 'shadow', proposedModel: safeModel(proposed.model), proposedEffort: proposed.effort, ...recommendation });
       notice(`[Jev Pilot] ${selected.model} · ${selected.effort ?? 'default'} (${selected.reason})`);
+      return selected;
     };
-    state.flight = run();
-    try { await state.flight; } finally { state.flight = null; }
-    return { session, route: state.route, state, rewrite: true };
+    const flight = run(); state.flight = flight;
+    let selected;
+    try { selected = await flight; } finally { if (state.flight === flight) state.flight = null; }
+    return snapshot(selected, true, generation);
   }
   async function handle(req, res) {
     const address = server.address();
@@ -135,9 +145,11 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
     let body;
     try { body = JSON.parse(Buffer.concat(chunks)); if (!body || typeof body !== 'object' || !safeModel(body.model)) throw new Error(); } catch { return error(res, 400); }
     const request = randomUUID(), started = performance.now();
-    const { route, session, state, rewrite } = path.endsWith('count_tokens')
+    const { route, session, state, rewrite, generation, sequence } = path.endsWith('count_tokens')
       ? { route: { model: body.model === AUTO ? models[policy.defaultTier].model : body.model, reason: 'count-tokens' }, session: hash('count-tokens'), state: {}, rewrite: body.model === AUTO }
       : await routeRequest(body, req, controller.signal);
+    const main = !['count-tokens', 'auxiliary', 'manual', 'tool-or-auxiliary'].includes(route.reason);
+    if (main && generation === state.generation) state.latestMainSequence = sequence;
     body = rewrite ? rewriteBody(body, route, agent) : body;
     if (agent === 'claude') body.tools?.forEach(t => normalizeSchema(t.input_schema));
     const headers = Object.fromEntries(Object.entries(req.headers).filter(([k, v]) => !HOP.has(k) && typeof v === 'string'));
@@ -167,14 +179,15 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
       const usage = tap?.result();
       // CLIs can close immediately after the terminal event instead of waiting for EOF.
       const completed = status >= 200 && status < 300 && Boolean(tap?.completed);
-      const failed = (broken && !completed) || status >= 400;
-      // Side calls and count_tokens must not lower the measured context of the active task.
-      if (usage && ['jev', 'sensitive-work', 'previous-request-failed', 'cache-hold', 'sustained-downgrade', 'low-confidence-hold', 'continuation', 'tool-continuation', 'confirmation-hold', 'shadow', 'jev-unavailable', 'no-jev-key', 'secret-not-sent'].includes(route.reason)) {
-        state.contextTokens = usage.input + usage.cacheRead + usage.cacheWrite; state.lastDone = Date.now();
+      const failed = !completed;
+      // Only the latest started main request of this human turn may change routing state.
+      // Responses still get logged when an older turn, duplicate or side call finishes late.
+      if (main && generation === state.generation && sequence === state.latestMainSequence) {
+        if (usage && completed) { state.contextTokens = usage.input + usage.cacheRead + usage.cacheWrite; state.lastDone = Date.now(); }
+        state.failed = failed;
       }
-      if (!['count-tokens', 'auxiliary', 'manual', 'tool-or-auxiliary'].includes(route.reason)) state.failed = failed;
       log({ event: 'response', request, session, status, model: safeModel(route.model), servedModel: safeModel(tap?.model), effort: route.effort ?? null,
-        completed, reason: route.reason, ms: Math.round(performance.now() - started), error: failed ? (broken ? 'stream-or-network' : 'provider-http') : null,
+        completed, reason: route.reason, ms: Math.round(performance.now() - started), error: failed ? (broken ? 'stream-or-network' : status >= 400 ? 'provider-http' : 'incomplete-response') : null,
         usage: usage ?? null, cost: costOf(tap?.model, usage, prices) ?? null,
         baselineCost: costOf(models[policy.maxTier].model, usage, prices) ?? null });
     }

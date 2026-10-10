@@ -17,6 +17,14 @@ copy.zh = {"overview": "概览", "activity": "选择记录", "methodology": "计
 copy.en.languageLabel='Report language'; copy.ko.languageLabel='보고서 언어';
 Object.assign(copy.en.reasons, {'visual-context':'Visual context floor','user-override':'Explicit model choice','user-override-limited':'Explicit choice limited','user-override-unavailable':'Requested model unavailable'});
 Object.assign(copy.ko.reasons, {'visual-context':'이미지 이해 기준 적용','user-override':'요청 끝의 모델 지정','user-override-limited':'모델·추론 설정 범위 적용','user-override-unavailable':'요청한 모델 사용 불가'});
+Object.assign(copy.en, {recommendation:'Jev recommendation',routingConfidence:'Routing confidence',choiceProbability:'Selected-option probability',choiceMargin:'Margin over next option',feedbackTitle:'How did the choice work?',feedbackNote:'Optional user feedback, not a measured task success rate. Only the latest rating per decision counts.',feedbackHelp:'After reviewing the latest turn: jev-pilot feedback too-weak --agent codex. Feedback stays local and does not retrain the router.',feedbackRatings:{right:'Appropriate','too-weak':'Too weak','too-strong':'Too strong','too-slow':'Too slow',rework:'Rework needed'},unchangedCost:'No estimated cost difference'});
+Object.assign(copy.ko, {recommendation:'Jev 원래 추천',routingConfidence:'분류 확신도',choiceProbability:'선택 항목 확률',choiceMargin:'차순위와의 차이',feedbackTitle:'선택이 적절했나요?',feedbackNote:'사용자가 남긴 평가이며 작업 성공률 측정이 아닙니다. 같은 선택은 마지막 평가만 집계합니다.',feedbackHelp:'최근 요청의 결과를 검토한 뒤: jev-pilot feedback too-weak --agent codex. 내 컴퓨터에만 기록하며 자동 학습하지 않습니다.',feedbackRatings:{right:'적절했음','too-weak':'모델이 약했음','too-strong':'과한 모델','too-slow':'느렸음',rework:'재작업 필요'},unchangedCost:'예상 비용 차이 없음'});
+Object.assign(copy.ja, {recommendation:'Jevの元の推奨',routingConfidence:'分類の確信度',choiceProbability:'選択肢の確率',choiceMargin:'次点との差',feedbackTitle:'選択は適切でしたか？',feedbackNote:'任意のユーザー評価です。作業成功率ではありません。同じ選択は最新の評価のみ集計します。',feedbackHelp:'直近の結果を確認後: jev-pilot feedback too-weak --agent codex。評価はローカルに保存し、自動学習には使用しません。',feedbackRatings:{right:'適切','too-weak':'能力不足','too-strong':'過剰','too-slow':'遅い',rework:'やり直し必要'},unchangedCost:'推定費用の差なし'});
+Object.assign(copy.zh, {recommendation:'Jev原始推荐',routingConfidence:'分类置信度',choiceProbability:'所选项概率',choiceMargin:'与次选项之差',feedbackTitle:'这次选择合适吗？',feedbackNote:'用户自愿评价，不代表任务成功率。同一选择只统计最新评价。',feedbackHelp:'检查最近请求的结果后：jev-pilot feedback too-weak --agent codex。评价仅保存在本地，不会自动训练路由器。',feedbackRatings:{right:'合适','too-weak':'能力不足','too-strong':'过强','too-slow':'太慢',rework:'需要返工'},unchangedCost:'预计费用无差异'});
+Object.assign(copy.en,{confidenceNote:'Classification scores are not calibrated task-success probabilities.',riskLabel:'Sensitive-change flag / confidence',rubricLabel:'Rubric version'});
+Object.assign(copy.ko,{confidenceNote:'분류 점수는 작업 성공 확률로 보정된 값이 아닙니다.',riskLabel:'민감 변경 판단 / 확신도',rubricLabel:'분류 기준 버전'});
+Object.assign(copy.ja,{confidenceNote:'分類スコアは作業成功確率として校正されていません。',riskLabel:'機微な変更の判定 / 確信度',rubricLabel:'分類基準の版'});
+Object.assign(copy.zh,{confidenceNote:'分类分数未经任务成功概率校准。',riskLabel:'敏感变更判断 / 置信度',rubricLabel:'分类标准版本'});
 let language = ['en','ko','ja','zh'].includes(navigator.language?.split('-')[0]) ? navigator.language.split('-')[0] : 'en';
 const locale = () => ({en:'en-US',ko:'ko-KR',ja:'ja-JP',zh:'zh-CN'})[language];
 const $ = id => document.getElementById(id);
@@ -50,7 +58,7 @@ function render() {
   const ready=Number.isFinite(s.estimates.netDifference), negative=ready&&s.estimates.netDifference<0;
   const card=document.querySelector('.savings-card'); card.classList.toggle('negative',negative);card.classList.toggle('unavailable',!ready);
   text('savings-percent',Number.isFinite(s.estimates.percent)?pct(Math.abs(s.estimates.percent)):'—');
-  text('savings-direction',ready?word(negative?'higher':'lower'):word('waitingPrices'));
+  text('savings-direction',ready?word(s.estimates.netDifference===0?'unchangedCost':negative?'higher':'lower'):word('waitingPrices'));
   text('savings-caption',ready?`${money(s.estimates.netDifference)} · ${word('difference')}`:word('noPrices'));
   const routed=ready?s.estimates.modelCost+s.estimates.jevCost:null;
   const max=ready?Math.max(s.estimates.baselineCost,routed,0):0;
@@ -78,17 +86,25 @@ function render() {
   const total=tokens.reduce((a,t)=>a+t[1],0);text('token-total',num(total));$('token-bar').replaceChildren();$('token-legend').replaceChildren();
   for(const [key,n,c] of tokens){const block=element('span');block.style.width=width(total?n/total*100:0);block.style.background=c;block.title=`${word(key)}: ${num(n)}`;$('token-bar').append(block);const item=element('div'),dot=element('i','legend-dot');dot.style.background=c;item.append(dot,element('span','',word(key)),element('b','',num(n)));$('token-legend').append(item);}
   text('jev-tokens',pair(s.jevInputTokens,s.jevOutputTokens));text('decision-count',`${num(s.decisions)} ${word('decisions')}`);
+  text('feedback-coverage',pair(s.feedback.ratedDecisions,s.feedback.totalDecisions));$('feedback-counts').replaceChildren();
+  for(const [rating,label] of Object.entries(word('feedbackRatings'))){const row=element('div');row.append(element('span','',label),element('b','',num(s.feedback.ratings[rating])));$('feedback-counts').append(row);}
   $('route-strip').replaceChildren();const sorted=s.timeline.slice().sort((a,b)=>String(a.ts).localeCompare(String(b.ts)));
   for(const e of sorted.slice(-80)){const tick=element('span',e.changed?'route-change':'');tick.style.background=color(e.model);tick.title=`${e.model} · ${e.effort??'default'} · ${e.reason}`;$('route-strip').append(tick);}
   const tbody=$('timeline');tbody.replaceChildren();
-  if(!sorted.length){const row=element('tr'),cell=element('td','table-empty',word('noDecisions'));cell.colSpan=6;row.append(cell);tbody.append(row);}
+  if(!sorted.length){const row=element('tr'),cell=element('td','table-empty',word('noDecisions'));cell.colSpan=8;row.append(cell);tbody.append(row);}
   for(const e of sorted.slice(-40).reverse()){
     const row=element('tr');const ts=Number.isFinite(Date.parse(e.ts))?new Intl.DateTimeFormat(locale(),{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:'UTC'}).format(new Date(e.ts)):'—';
-    const cells=[element('td','',ts),element('td'),element('td','',modelName(e.model)),element('td'),element('td'),element('td')];
-    cells[1].append(element('span','tool-label',e.agent==='codex'?'Codex':e.agent==='claude'?'Claude':e.agent??'—'));cells[2].title=e.model;
-    cells[3].append(element('span','effort-pill',e.effort??'default'));
+    const cells=[element('td','',ts),element('td'),element('td'),element('td','',modelName(e.model)),element('td'),element('td'),element('td'),element('td')];
+    cells[1].append(element('span','tool-label',e.agent==='codex'?'Codex':e.agent==='claude'?'Claude':e.agent??'—'));cells[3].title=e.model;
+    if(e.recommendedTier){
+      const details=element('details'),summary=element('summary','',`${e.recommendedTier} · ${e.recommendedEffort??'—'}`),body=element('div','recommendation-detail');
+      const probability=value=>pct(value===null?null:value*100);
+      body.append(element('p','',`${word('routingConfidence')}: ${probability(e.confidence)} / ${probability(e.effortConfidence)}`),element('p','',`${word('choiceProbability')}: ${probability(e.capabilityProbability)} / ${probability(e.effortProbability)}`),element('p','',`${word('choiceMargin')}: ${probability(e.capabilityMargin)} / ${probability(e.effortMargin)}`),element('p','',`${word('riskLabel')}: ${e.sensitive===null?'—':String(e.sensitive)} / ${probability(e.riskConfidence)}`),element('p','',`${word('rubricLabel')}: ${e.rubricVersion??'—'}`),element('p','',word('confidenceNote')));
+      details.append(summary,body);cells[2].append(details);
+    }else cells[2].textContent='—';
+    cells[4].append(element('span','effort-pill',e.effort??'default'));
     const reason=e.shadow?`${word('reasons').shadow} → ${modelName(e.proposedModel)} / ${e.proposedEffort??'default'}`:word('reasons')[e.reason]??e.reason;
-    const pill=element('span','reason-pill'+(e.reason==='jev-unavailable'?' fallback':''),reason);pill.title=e.reason;cells[4].append(pill);cells[5].append(element('span',e.changed?'change-pill':'',e.changed?'↗ '+word('changed'):'—'));row.append(...cells);tbody.append(row);
+    const pill=element('span','reason-pill'+(e.reason==='jev-unavailable'?' fallback':''),reason);pill.title=e.reason;cells[5].append(pill);cells[6].textContent=e.feedback?word('feedbackRatings')[e.feedback]:'—';cells[7].append(element('span',e.changed?'change-pill':'',e.changed?'↗ '+word('changed'):'—'));row.append(...cells);tbody.append(row);
   }
   text('timeline-note',`${word('timelineTail')} ${num(Math.min(40,s.timeline.length))} ${word('of')} ${num(s.timeline.length)} ${word('decisions')}.`);
   const messages={'no-responses':'noResponses','missing-prices-or-usage':'missingPrices','missing-jev-cost':'missingJev','unfinished-requests':'unfinished','malformed-records':'malformed'};

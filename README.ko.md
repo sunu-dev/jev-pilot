@@ -12,6 +12,15 @@
 
 Node.js 22 이상, 로그인된 `codex` 또는 `claude`가 필요합니다. macOS/Linux 소스 설치 기준입니다.
 
+소스 폴더를 유지할 필요 없이 고정 버전 패키지로 설치할 수도 있습니다.
+
+```sh
+npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.3/sunulab-jev-pilot-0.1.0-alpha.3.tgz
+jev-pilot verify
+```
+
+개발용 소스 설치:
+
 ```sh
 git clone https://github.com/sunu-dev/jev-pilot.git
 cd jev-pilot
@@ -19,7 +28,7 @@ npm run verify
 node bin/jev-pilot.mjs install
 ```
 
-`~/.local/bin`에 `jev-pilot`, `pilot-codex`, `pilot-claude`를 추가합니다. 해당 경로가 PATH에 있어야 합니다. 원래 CLI와 기존 `jev-codex`는 바꾸지 않습니다. 소스 폴더는 이동하지 마세요.
+npm 패키지는 npm 전역 실행 경로에 `jev-pilot`, `pilot-codex`, `pilot-claude`를 추가합니다. 소스 설치는 `~/.local/bin`에 연결하므로 해당 경로가 PATH에 있어야 하고 소스 폴더를 유지해야 합니다. 두 방법 모두 원래 CLI와 기존 `jev-codex`는 바꾸지 않습니다.
 
 키를 저장소 밖의 개인 파일에 저장한 뒤 **경로만** 등록합니다.
 
@@ -94,6 +103,16 @@ open examples/demo-report.html
 ```
 
 데모 숫자와 단가는 모두 가상 자료입니다.
+
+## 선택 품질도 기록하기
+
+결과를 검토한 직후 다른 터미널에서 `jev-pilot feedback too-weak --agent codex`로 최근 선택을 평가할 수 있습니다. `right`(적절), `too-strong`(과함), `too-slow`(느림), `rework`(재작업 필요)도 지원합니다. 해당 도구의 **모든 로컬 프로젝트 가운데 최근 결정**이 대상이므로 명령에 표시된 시각과 모델을 확인하세요. 마지막 평가만 집계하며 자동 학습·전송은 하지 않습니다.
+
+보고서에서 Jev의 원래 추천과 최종 모델·추론 강도를 따로 확인할 수 있습니다. 추천을 펼치면 분류 확신도와 선택 확률도 표시합니다. 이것은 작업 성공 확률이 아닙니다. [커뮤니티 조사와 반영](docs/community-routing-research.ko.md) · [보고서 설명](docs/reporting.md).
+
+모델 변경을 줄이면서 effort만 자동 선택하려면 `pilot-codex --models sol`로 시작하세요. 완성도 높은 디자인·복합 결과물도 분류 기준에 반영하지만 실제 품질 개선은 별도 작업 평가가 필요합니다. Sol xhigh를 적용하려면 `maxEffort`를 xhigh 이상으로 설정해야 합니다.
+
+`npm run eval:routing`은 직접 작성한 다국어 사례 24개의 형식을 오프라인으로 검사합니다. 명시적인 `--live --out`은 유료 Jev 분류 평가이며, 실제 작업 품질·절감률 측정이 아닙니다.
 
 ## 개인정보와 제거
 

@@ -4,8 +4,8 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { cleanEnv, projectDir, takeModelScope } from '../src/cli.mjs';
-import { findProject } from '../src/config.mjs';
+import { cleanEnv, projectDir, takeModelScope, verifiedResponses } from '../src/cli.mjs';
+import { DEFAULTS, findProject, scopedPolicy, activeModelIds, readJSON } from '../src/config.mjs';
 const bin = resolve('bin/jev-pilot.mjs');
 function fixture(t) {
   const dir = mkdtempSync(join(tmpdir(), 'pilot-cli-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -27,6 +27,11 @@ test('global init stores only external key pointer and refuses overwrite', t => 
   assert.ok(!readFileSync(join(dir, 'config', 'config.json'), 'utf8').includes('test-placeholder-value'));
   assert.equal(run(['init', '--key-file', key]).status, 1);
 });
+test('configuration accepts a leading UTF-8 BOM from editors without accepting invalid JSON', t => {
+  const { dir } = fixture(t), file = join(dir, 'policy.json');
+  writeFileSync(file, '\uFEFF{"enabled":true}\r\n'); assert.deepEqual(readJSON(file), { enabled: true });
+  writeFileSync(file, '\uFEFF{"enabled":'); assert.throws(() => readJSON(file), /Invalid JSON/);
+});
 test('project discovery respects Git boundary and nested directory', t => {
   const { dir } = fixture(t); mkdirSync(join(dir, 'repo', 'sub'), { recursive: true }); mkdirSync(join(dir, 'repo', '.git'));
   writeFileSync(join(dir, '.jev-pilot.json'), '{}'); assert.equal(findProject(join(dir, 'repo', 'sub')), null);
@@ -40,6 +45,18 @@ test('classifier and API keys cannot reach child process environment', () => {
 test('empty report is useful and has no invented savings', t => {
   const { run } = fixture(t); const result = run(['report']); assert.equal(result.status, 0); assert.ok(result.stdout.includes('Unavailable'));
 });
+test('feedback command records a local rating and rejects missing decisions and invalid ratings', t => {
+  const { dir, run } = fixture(t);
+  assert.equal(run(['feedback', 'too-weak', '--agent', 'codex']).status, 1);
+  const logs = join(dir, 'data', 'logs'); mkdirSync(logs, { recursive: true });
+  writeFileSync(join(logs, 'fixture.jsonl'), JSON.stringify({ schema: 1, event: 'decision', agent: 'codex', run: 'fixture', session: 's', decisionId: 'choice-1', ts: '2026-10-10T12:00:00Z', model: 'gpt-example', effort: 'medium' }) + '\n');
+  const result = run(['feedback', 'too-weak', '--agent', 'codex']);
+  assert.equal(result.status, 0, result.stderr); assert.ok(result.stdout.includes('Recorded too-weak')); assert.ok(result.stdout.includes('2026-10-10'));
+  assert.equal(run(['feedback', 'invalid']).status, 1);
+  assert.equal(run(['feedback', 'right', '--agent=claude']).status, 1);
+  for (const args of [['feedback','right','--agnt','codex'], ['feedback','right','--agent','codex','--agent=codex'], ['feedback','right','--agent=']]) assert.equal(run(args).status, 1);
+  const report = run(['report']); assert.equal(report.status, 0); assert.match(report.stdout, /Locally rated decisions\s+1 \/ 1/); assert.match(report.stdout, /Too weak \/ rework\s+1 \/ 0/);
+});
 test('live verification cannot silently pass and does not pollute normal usage logs', { skip: process.platform === 'win32' }, t => {
   const { dir, run } = fixture(t), fake = join(dir, 'fake-claude.mjs');
   writeFileSync(fake, '#!/usr/bin/env node\nprocess.exit(0);\n', { mode: 0o755 });
@@ -49,6 +66,26 @@ test('live verification cannot silently pass and does not pollute normal usage l
   assert.equal(result.status, 1); assert.ok(result.stdout.includes('FAIL claude'));
   assert.ok(!existsSync(join(dir, 'data', 'logs')));
   assert.equal(readdirSync(join(dir, 'data', 'verification', 'logs')).length, 1);
+});
+test('all-model live verification isolates each physical model from a global scope', { skip: process.platform === 'win32' }, t => {
+  const { dir, run } = fixture(t), fake = join(dir, 'fake-claude.mjs'), record = join(dir, 'cases.jsonl');
+  writeFileSync(fake, '#!/usr/bin/env node\nimport { appendFileSync, readFileSync } from "node:fs";\nappendFileSync(process.env.PILOT_TEST_CASES, readFileSync(".jev-pilot.json", "utf8") + "\\n");\n', { mode: 0o755 });
+  mkdirSync(join(dir, 'config'));
+  writeFileSync(join(dir, 'config', 'config.json'), JSON.stringify({ policy: { sendToJev: false, claudeModels: ['sonnet'] }, binaries: { claude: fake } }));
+  const result = run(['verify', '--live', 'claude', '--models'], { PILOT_TEST_CASES: record });
+  assert.equal(result.status, 1); // The fake CLI produces no inference; this only exercises case isolation.
+  const cases = readFileSync(record, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(cases.length, 3);
+  const expected = [...new Set(Object.values(DEFAULTS.claude))];
+  assert.deepEqual(cases.map(c => c.claudeModels[0]), expected);
+  for (const c of cases) assert.deepEqual(activeModelIds(scopedPolicy({ ...DEFAULTS, claudeModels: ['sonnet'], ...c }, 'claude'), 'claude'), c.claudeModels);
+});
+test('live verification requires the expected model, including a matching served model', () => {
+  const e = { event: 'response', completed: true, model: DEFAULTS.codex.balanced, servedModel: DEFAULTS.codex.balanced };
+  assert.equal(verifiedResponses([e], DEFAULTS.codex.fast).length, 0);
+  assert.equal(verifiedResponses([{ ...e, model: DEFAULTS.codex.fast }], DEFAULTS.codex.fast).length, 0);
+  assert.equal(verifiedResponses([{ ...e, servedModel: e.model + '-20261001' }], e.model).length, 1);
+  assert.equal(verifiedResponses([{ ...e, completed: false }], e.model).length, 0);
 });
 
 test('model-scope arguments are consumed and native CLI arguments survive', () => {
