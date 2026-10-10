@@ -57,6 +57,8 @@ Subscriptions do not expose a universal token-to-quota conversion. Therefore the
 
 Local JSONL logs: `~/.local/share/jev-pilot/logs/`. Permissions are owner-only; each session file is capped at 50 MB and logging warns then stops if storage fails. Logs are not automatically deleted or uploaded. `JEV_PILOT_DATA_HOME` can relocate them.
 
+Live verification writes to `~/.local/share/jev-pilot/verification/logs/` instead, so smoke tests do not inflate your normal usage report. Inspect those separately with `jev-pilot report --from ~/.local/share/jev-pilot/verification/logs`.
+
 Use `jev-pilot report --json summary.json` to export an aggregate report. It includes model IDs and a decision timeline, so inspect before sharing. Malformed/truncated lines are counted and skipped with a warning. `--since` uses UTC dates. The HTML agent filter changes only the timeline; CLI filters change all aggregate metrics.
 
 The demo files contain only synthetic fixtures and invented rates. Do not cite them as user savings.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cleanEnv, projectDir } from '../src/cli.mjs';
@@ -39,4 +39,14 @@ test('classifier and API keys cannot reach child process environment', () => {
 });
 test('empty report is useful and has no invented savings', t => {
   const { run } = fixture(t); const result = run(['report']); assert.equal(result.status, 0); assert.ok(result.stdout.includes('Unavailable'));
+});
+test('live verification cannot silently pass and does not pollute normal usage logs', { skip: process.platform === 'win32' }, t => {
+  const { dir, run } = fixture(t), fake = join(dir, 'fake-claude.mjs');
+  writeFileSync(fake, '#!/usr/bin/env node\nprocess.exit(0);\n', { mode: 0o755 });
+  mkdirSync(join(dir, 'config'));
+  writeFileSync(join(dir, 'config', 'config.json'), JSON.stringify({ policy: { sendToJev: false }, binaries: { claude: fake } }));
+  const result = run(['verify', '--live', 'claude']);
+  assert.equal(result.status, 1); assert.ok(result.stdout.includes('FAIL claude'));
+  assert.ok(!existsSync(join(dir, 'data', 'logs')));
+  assert.equal(readdirSync(join(dir, 'data', 'verification', 'logs')).length, 1);
 });

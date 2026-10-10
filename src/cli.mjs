@@ -55,7 +55,7 @@ export function agentCommand(agent, args, url, token, context) {
     ...args,
   ], env: {} };
 }
-export async function runAgent(agent, args, { quiet = false, env = process.env } = {}) {
+export async function runAgent(agent, args, { quiet = false, env = process.env, verification = false } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('Expected codex or claude');
   const config = loadConfig(projectDir(agent, args));
   const executable = config.binaries[agent] || agent;
@@ -67,7 +67,7 @@ export async function runAgent(agent, args, { quiet = false, env = process.env }
     const catalog = agent === 'codex' ? readCatalog(env) : [];
     const models = resolveModels(config.policy, agent, catalog);
     const key = config.policy.sendToJev ? loadKey(config, env) : '';
-    ledger = createLedger({ agent, warn: message => console.error(`[Jev Pilot] ${message}`) });
+    ledger = createLedger({ agent, dir: join(dataHome(), ...(verification ? ['verification'] : []), 'logs'), warn: message => console.error(`[Jev Pilot] ${message}`) });
     ledger.log({ event: 'session_start', mode: config.policy.mode });
     proxy = createProxy({ agent, ...config, models, catalog, key, log: ledger.log,
       notice: message => { if (!quiet) console.error(message); } });
@@ -130,7 +130,7 @@ export async function verifyLive(target, allModels = false) {
       if (tier) writeFileSync(join(workspace, '.jev-pilot.json'), JSON.stringify({ minTier: tier, defaultTier: tier, maxTier: tier, mode: 'turn' }));
       const prompt = 'Reply with exactly JEV_PILOT_OK. Do not use any tools or access files.';
       const args = agent === 'codex' ? ['exec', '--skip-git-repo-check', '--ephemeral', '--sandbox', 'read-only', prompt] : ['-p', prompt, '--max-turns', '1', '--permission-mode', 'plan'];
-      const result = await runAgent(agent, args, { quiet: true });
+      const result = await runAgent(agent, args, { quiet: true, verification: true });
       const events = result.logPath ? readLedger(result.logPath).events : [];
       const s = summarize(events);
       const observed = events.filter(e => e.event === 'response' && e.completed && e.servedModel && (e.servedModel === e.model || e.servedModel.startsWith(e.model + '-')));
