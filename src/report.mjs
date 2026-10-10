@@ -43,7 +43,7 @@ export function summarize(events, { agent, since, run } = {}) {
     modelChanges: decisions.filter(e => e.modelChanged).length, effortChanges: decisions.filter(e => e.effortChanged).length,
     cacheHolds: decisions.filter(e => e.reason === 'cache-hold').length,
     modelMismatches: responses.filter(e => e.servedModel && e.model !== e.servedModel && !e.servedModel.startsWith(e.model + '-')).length,
-    models: count(inference.map(e => e.servedModel ?? e.model)), reasons: count(decisions.map(e => e.reason)),
+    models: count(inference.map(e => e.servedModel)), selectedModels: count(inference.map(e => e.model)), reasons: count(decisions.map(e => e.reason)),
     usage, usageCoverage: inference.filter(e => e.usage).length, servedModelCoverage: inference.filter(e => e.servedModel).length,
     jevLatency: { p50: pct(0.5), p95: pct(0.95) },
     estimates: { pricedRequests: priced.length, totalRequests: inference.length, modelCost: priced.length ? modelCost : null,

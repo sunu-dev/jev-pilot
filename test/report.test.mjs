@@ -30,7 +30,7 @@ test('unfinished requests remain visible after interruption', () => {
   assert.equal(summarize([e({ event: 'request', request: '1' })]).unfinished, 1);
 });
 test('HTML escapes untrusted strings and has no remote assets', () => {
-  const html = htmlReport(summarize([e({ event: 'response', model: '</script><img src=x onerror=alert(1)>' })]));
+  const html = htmlReport(summarize([e({ event: 'response', servedModel: '</script><img src=x onerror=alert(1)>' })]));
   assert.ok(!html.includes('</script><img')); assert.ok(!html.includes('<script src=')); assert.ok(html.includes('\\u003c/script>'));
 });
 test('ledger excludes raw prompt, key and arbitrary objects; recovers a truncated final line', t => {
@@ -63,4 +63,9 @@ test('interrupted Jev or provider requests suppress the aggregate savings estima
 test('token counting does not inflate inference token totals', () => {
   const s = summarize([e({ event: 'response', reason: 'count-tokens', usage: { input: 1000 } }), e({ event: 'response', usage: { input: 100 } })]);
   assert.equal(s.usage.input, 100);
+});
+test('a selected model cannot masquerade as an observed served model', () => {
+  const s = summarize([e({ event: 'response', model: 'gpt-example-selected' })]);
+  assert.deepEqual(s.models, [['unknown', 1]]); assert.deepEqual(s.selectedModels, [['gpt-example-selected', 1]]);
+  assert.equal(s.servedModelCoverage, 0);
 });
