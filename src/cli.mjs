@@ -12,7 +12,7 @@ import { recordFeedback } from './feedback.mjs';
 import { routingPolicySnapshot } from './receipt.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = '0.1.0-alpha.4';
+const VERSION = '0.1.0-alpha.5';
 const help = `Jev Pilot ${VERSION} · sunulab · experimental
 
 jev-pilot init [--key-file /absolute/path/outside/repo.txt]
@@ -73,6 +73,23 @@ export function projectDir(agent, args, cwd = process.cwd()) {
   const direct = args.find(a => a.startsWith('--cd='))?.slice(5);
   return resolve(cwd, direct ?? option(args, '-C') ?? option(args, '--cd') ?? '.');
 }
+function hoistCodexConfig(args) {
+  const overrides = [], remaining = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--') { remaining.push(...args.slice(i)); break; }
+    if (arg === '-c' || arg === '--config') {
+      const value = args[++i];
+      if (value === undefined || value === '--') throw new Error(`${arg} needs a value`);
+      overrides.push('-c', value);
+    } else if (arg.startsWith('--config=')) overrides.push('-c', arg.slice(9));
+    else if (arg.startsWith('-c') && arg.length > 2) overrides.push('-c', arg.slice(arg[2] === '=' ? 3 : 2));
+    else remaining.push(arg);
+  }
+  // Codex 0.162.1's global -c list at a subcommand replaces the root list.
+  // Keep every override in one scope, with native values after Pilot defaults.
+  return [...overrides, ...remaining];
+}
 export function agentCommand(agent, args, url, token, context) {
   if (agent === 'claude') return { args: ['--model', AUTO, ...args], env: {
     ANTHROPIC_BASE_URL: url,
@@ -87,7 +104,7 @@ export function agentCommand(agent, args, url, token, context) {
     '-c', 'model_providers.jev_pilot.requires_openai_auth=true',
     '-c', 'model_providers.jev_pilot.supports_websockets=false',
     '-c', `model_providers.jev_pilot.http_headers={"x-jev-pilot-token"="${token}"}`,
-    ...args,
+    ...hoistCodexConfig(args),
   ], env: {} };
 }
 export async function runAgent(agent, args, { quiet = false, env = process.env, verification = false } = {}) {
@@ -108,7 +125,7 @@ export async function runAgent(agent, args, { quiet = false, env = process.env, 
     const models = resolveModels(config.policy, agent, catalog);
     const key = config.policy.sendToJev ? loadKey(config, env) : '';
     ledger = createLedger({ agent, dir: join(dataHome(), ...(verification ? ['verification'] : []), 'logs'), warn: message => console.error(`[Jev Pilot] ${message}`) });
-    ledger.log({ event: 'session_start', mode: config.policy.mode, allowedModels: activeModelIds(config.policy, agent), policySnapshot: routingPolicySnapshot(config.policy, models) });
+    ledger.log({ event: 'session_start', runtimeVersion: VERSION, mode: config.policy.mode, allowedModels: activeModelIds(config.policy, agent), policySnapshot: routingPolicySnapshot(config.policy, models) });
     proxy = createProxy({ agent, ...config, models, catalog, key, log: ledger.log,
       notice: message => { if (!quiet) console.error(message); } });
     const url = await proxy.listen();

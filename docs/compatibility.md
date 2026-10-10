@@ -46,6 +46,7 @@ These probes show that classification can distinguish difficulty and that policy
 
 ## Known limits of this alpha
 
+- Repeated `stream disconnected before completion` errors have occurred in an author's long Codex session. The affected process started before the current diagnostic improvements. Fresh short native and fixed-scope Pilot requests completed on Astra and Sol, which does not establish the cause or resolve the long-session failure. See [interrupted-response diagnostics](troubleshooting.md).
 - Native smoke checks cover short sessions. Resume, very long conversations, compaction, multi-agent isolation and interactive `/model` transitions still need independent live validation. Tool/sub-agent message shapes are covered by fixtures, not every future CLI variant.
 - Routing state is in memory for the launcher process. Restarting loses downgrade streaks. Cache warmth is a usage/time heuristic, not a provider guarantee; model switches can discard cache reuse.
 - Route history is limited to 64 distinct human turns per routing session. Matching older tool continuations retain their own decision link; unmatched or evicted tool requests have no decision link and cannot update the current turn's routing/cache state. Fixture coverage does not establish persistent resume or compatibility with every MCP/tool message shape.

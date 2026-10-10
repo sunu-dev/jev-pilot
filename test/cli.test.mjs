@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { cleanEnv, projectDir, takeModelScope, takeLaunchOptions, verifiedResponses } from '../src/cli.mjs';
+import { agentCommand, cleanEnv, projectDir, takeModelScope, takeLaunchOptions, verifiedResponses } from '../src/cli.mjs';
 import { DEFAULTS, findProject, scopedPolicy, activeModelIds, readJSON } from '../src/config.mjs';
 const bin = resolve('bin/jev-pilot.mjs');
 function fixture(t) {
@@ -39,6 +39,28 @@ test('project discovery respects Git boundary and nested directory', t => {
   writeFileSync(join(dir, 'repo', '.jev-pilot.json'), '{}'); assert.equal(findProject(join(dir, 'repo', 'sub')), join(dir, 'repo', '.jev-pilot.json'));
 });
 test('Codex -C uses the destination project policy', () => assert.equal(projectDir('codex', ['-C', '/tmp/project'], '/tmp'), '/tmp/project'));
+test('Codex configuration overrides share one root scope across nested commands', () => {
+  const build = args => agentCommand('codex', args, 'http://127.0.0.1:1234', 'local-test-token', 272000).args;
+  const defaults = build([]);
+  const args = ['-c', 'duplicate=1', 'exec', '--config', 'model_reasoning_effort="medium"', 'resume', '--last', '--config=duplicate=2', '-cattached=true', '-c=other=true', '-C', '/tmp/project', 'hello'];
+  const original = [...args];
+  assert.deepEqual(build(args), [...defaults,
+    '-c', 'duplicate=1', '-c', 'model_reasoning_effort="medium"', '-c', 'duplicate=2', '-c', 'attached=true', '-c', 'other=true',
+    'exec', 'resume', '--last', '-C', '/tmp/project', 'hello',
+  ]);
+  assert.deepEqual(args, original);
+  assert.equal(build(args).slice(build(args).indexOf('exec')).includes('-c'), false);
+});
+test('Codex configuration normalization preserves literal arguments after --', () => {
+  const build = args => agentCommand('codex', args, 'http://127.0.0.1:1234', 'local-test-token', 272000).args;
+  assert.deepEqual(build(['exec', '--config=enabled=true', '--', '-c', 'literal=1', '--config=literal=2']),
+    [...build([]), '-c', 'enabled=true', 'exec', '--', '-c', 'literal=1', '--config=literal=2']);
+  for (const args of [['exec', '-c'], ['resume', '--config'], ['exec', '-c', '--']]) assert.throws(() => build(args), /needs a value/);
+});
+test('Codex-only configuration normalization leaves Claude native arguments intact', () => {
+  const args = ['-p', 'hello', '-c', '--config=literal'];
+  assert.deepEqual(agentCommand('claude', args, 'http://127.0.0.1:1234', 'local-test-token', 272000).args, ['--model', 'jev-pilot', ...args]);
+});
 test('classifier and API keys cannot reach child process environment', () => {
   const env = cleanEnv({ TYPESAFE_API_KEY: 'private', JEV_API_KEY: 'private', OPENAI_API_KEY: 'private', ANTHROPIC_AUTH_TOKEN: 'private', PATH: '/bin' });
   assert.deepEqual(env, { PATH: '/bin' });
@@ -173,6 +195,7 @@ test('scoped launcher passes only native arguments and records project override'
   const file = join(dir, 'data', 'logs', readdirSync(join(dir, 'data', 'logs'))[0]);
   const start = JSON.parse(readFileSync(file, 'utf8').split('\n')[0]);
   assert.deepEqual(start.allowedModels, ['claude-haiku-5-5']);
+  assert.equal(start.runtimeVersion, readJSON(resolve('package.json')).version);
 });
 test('visual report exports offline HTML with agent-wide filters and owner permissions', t => {
   const { dir, run } = fixture(t), file = join(dir, 'report.html');

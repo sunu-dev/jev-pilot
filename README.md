@@ -1,57 +1,79 @@
 # Jev Pilot
 
-**Automatic model routing you can inspect.**
+**Task-based model and reasoning-effort routing for Codex CLI and Claude Code.**
 
 [![CI](https://github.com/sunu-dev/jev-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/sunu-dev/jev-pilot/actions/workflows/ci.yml)
 [![Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Experimental](https://img.shields.io/badge/status-experimental-orange)](docs/compatibility.md)
 
-[한국어](README.ko.md) · [Demo report](examples/demo-report.html) · [Report methodology](docs/reporting.md) · [Compatibility](docs/compatibility.md)
+[한국어](README.ko.md) · [Quick start](#install-and-verify) · [Configuration](docs/configuration.md) · [Troubleshooting](docs/troubleshooting.md)
 
-Jev Pilot runs your existing **Codex CLI or Claude Code**, asks TypeSafe Jev to choose capability and reasoning effort for new user turns, and produces a local report of what happened. It uses the CLI's existing subscription login. A TypeSafe key with available credits is required for classification.
+Keep your existing CLI and subscription login. Set the models Pilot may use, let TypeSafe Jev recommend capability and effort for each new user turn, and inspect the choice and observed usage in a local report.
 
-```text
-pilot-codex
-[Jev Pilot] gpt-6-luna · low (jev)
-[Jev Pilot] gpt-6.1-sol · high (sensitive-work)
-[Jev Pilot] gpt-6.1-sol · low (cache-hold)
-[Jev Pilot] gpt-6-luna · low (sustained-downgrade)
+```sh
+pilot-codex --models astra,sol
+pilot-claude --models opus,sonnet
+jev-pilot report --open
 ```
 
-Illustrative output. Access depends on your CLI, plan and configured models.
+| You control | You can inspect |
+| --- | --- |
+| Allowed models, per run or project | Recommended model/effort, applied rules and final choice |
+| Automatic effort, even with one allowed model | Model changes, route reuse and classifier calls/failures |
+| Trailing model commands in English, Korean, Japanese and Chinese | Provider-reported models, token usage and cache coverage |
+| Image-task floors and classifier call limits | Local feedback linked to an exact decision |
 
-## Why another router?
+![Jev Pilot local usage report with model scope, usage coverage and cost estimates](examples/report-preview.png)
 
-The question is not just “which model?” It is **“did it switch, why did it stay, and what did that cost?”**
+**Synthetic demo:** invented activity and prices, not measured savings. [Generate the offline demo](#inspect-a-report) · [Estimate methodology](docs/reporting.md).
 
-- Model capability and reasoning effort are separate Jev questions in one API call.
-- New user turns are reconsidered; tool continuations keep their route.
-- A warm, long conversation can hold a downgrade, but repeated confident cheap decisions release it. Sessions do not ratchet upward forever.
-- Local reports show Jev requests/failures, selected model and effort changes, served models, cache tokens and estimate coverage.
-- Choose exactly which models automatic routing may use, per launch or project. Reasoning effort remains independent.
-- Inspect the policy and ordered rules applied to each choice, then target that exact decision with local feedback.
-- Repeated classifier failures pause new calls temporarily; an optional per-run call limit bounds classification attempts.
-- Shadow mode records suggestions while keeping the session's default route.
-- No runtime dependencies, background daemon, account service or automatic telemetry.
-
-**Experimental alpha.** There is no measured subscription-quota saving or long-session quality benchmark yet. Reports compare API-equivalent prices on observed tokens; they do not claim a smaller subscription bill. See [limitations](docs/compatibility.md).
-
-![Jev Pilot report preview with model scope, cost estimate and recorded usage coverage](examples/report-preview.png)
-
-Synthetic demo with invented prices; the displayed percentage is not measured savings. [Open the offline demo](examples/demo-report.html) or inspect [how estimates are calculated](docs/reporting.md).
+**Experimental alpha.** Two short subscription smoke checks completed on the author's accounts in alpha.4; long-session reliability, task quality and subscription-quota savings are not established. Repeated stream interruptions occurred in a long Codex session and remain under investigation. Alpha.5 adds diagnostics; this does not establish a fix. [Evidence and limits](docs/compatibility.md) · [Interrupted responses](docs/troubleshooting.md).
 
 ## Install and verify
 
-Needs Node.js **22+**, a working `codex` and/or `claude` on PATH, and its existing subscription login. Source installation is intended for macOS/Linux. Do not uninstall your original CLI.
+Requires **Node.js 22+**, macOS/Linux, and a working, subscription-logged-in `codex` and/or `claude` on PATH. Codex desktop sessions are not routed. Jev classification requires a TypeSafe API key with available credits; no separate OpenAI or Anthropic API key is needed for this subscription workflow. Model access still depends on your account and CLI.
 
-Pinned release package (no permanent source checkout needed):
+**1. Install the pinned alpha package and run offline checks.**
 
 ```sh
-npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.4/sunulab-jev-pilot-0.1.0-alpha.4.tgz
+npm install --global https://github.com/sunu-dev/jev-pilot/releases/download/v0.1.0-alpha.5/sunulab-jev-pilot-0.1.0-alpha.5.tgz
 jev-pilot verify
 ```
 
-Or install from source for development:
+This adds `jev-pilot`, `pilot-codex` and `pilot-claude`. Your original `codex`, `claude` and any existing `jev-codex` remain available.
+
+**2. Register your TypeSafe key file and check the setup.**
+
+Save the raw key in an owner-readable file **outside this repository**, then register its path:
+
+```sh
+jev-pilot init --key-file /absolute/path/to/typesafe-key.txt
+jev-pilot doctor
+```
+
+`TYPESAFE_API_KEY` or `JEV_API_KEY` is also supported. Keep real keys out of command arguments, tracked files and issue reports. `doctor` makes no paid calls; it checks setup, not model entitlement. With multiple CLI installations, [choose the executable explicitly](docs/configuration.md#choosing-the-original-cli).
+
+**3. Verify the tool you use with a short live prompt.**
+
+```sh
+jev-pilot verify --live codex
+# Or: jev-pilot verify --live claude
+```
+
+This consumes TypeSafe credits and provider allowance. PASS requires a successful Jev decision **and** a completed provider response reporting the selected model. A fallback alone does not pass. Optional `jev-pilot verify --live all --models` checks each distinct globally configured model and makes more paid calls.
+
+**4. Start a project and open the local report.**
+
+```sh
+cd /path/to/project
+pilot-codex
+# Or: pilot-claude
+```
+
+In another terminal, run `jev-pilot report --open`. It aggregates all local project runs; narrow it with `--agent` or `--since`. It opens a snapshot of the records available then; run it again to refresh. Use plain `codex` or `claude` whenever you want their native behavior.
+
+<details>
+<summary>Install from source for development</summary>
 
 ```sh
 git clone https://github.com/sunu-dev/jev-pilot.git
@@ -60,144 +82,137 @@ npm run verify
 node bin/jev-pilot.mjs install
 ```
 
-The npm package adds `jev-pilot`, `pilot-codex` and `pilot-claude` to your npm global executable directory. Source installation links them into `~/.local/bin`; add that directory to PATH if necessary and keep the source directory in place. Neither method replaces `codex`, `claude`, or an existing `jev-codex`.
+The source installer links launchers into `~/.local/bin`; keep this directory on PATH and retain the checkout. It does not replace existing commands. To try without installing, use `node /path/to/jev-pilot/bin/jev-pilot.mjs` instead of `jev-pilot`.
 
-Store your **raw TypeSafe key outside this repository** in an owner-readable file. Then register only the file path:
+</details>
 
-```sh
-jev-pilot init --key-file /absolute/path/to/typesafe-key.txt
-jev-pilot doctor
-```
-
-Alternatively, set `TYPESAFE_API_KEY` or `JEV_API_KEY` in your environment. Do not put a real key in an issue, command argument, screenshot or tracked file. `doctor` makes no paid calls and does not prove model entitlement.
-
-Run the real end-to-end check for the tool you use. This sends a tiny prompt and consumes TypeSafe credits and provider allowance:
-
-```sh
-jev-pilot verify --live codex
-jev-pilot verify --live claude
-# Optional: check every distinct configured model (more paid calls)
-jev-pilot verify --live all --models
-```
-
-PASS requires a successful Jev decision **and** a completed provider response reporting the selected model. A silent classification fallback does not pass. No installation is required to try: replace `jev-pilot` with `node /path/to/jev-pilot/bin/jev-pilot.mjs`.
-
-Multiple CLI installations? `doctor` shows the versions in use; [select the original executable explicitly](docs/configuration.md#choosing-the-original-cli).
-
-## Use it in a project
-
-```sh
-cd /path/to/project
-jev-pilot project init balanced
-pilot-codex
-# or
-pilot-claude
-```
-
-Project initialization is optional. Plain `codex` and `claude` retain their normal behavior. `pilot-codex -C /path/to/project` reads that project's policy. Project settings contain only routing policy and model IDs, never keys or upstream destinations.
-
-Presets: `balanced` (default), `economy` (up to balanced capability), `quality` (at least balanced, up to xhigh effort), `shadow` (classify and report without applying advice). Economy limits capability even for difficult tasks; pick a suitable preset for your work.
-
-### Choose your automatic model scope
+## Choose the models Pilot may use
 
 ```sh
 pilot-codex --models astra,sol       # Astra + Sol
-pilot-codex --models sol             # Sol only, variable effort
+pilot-codex --models sol             # One model, automatic effort
 pilot-codex --models luna            # Luna only
-pilot-codex --models astra,sol,luna   # all three
-pilot-codex --models astra,luna       # skip Sol
-pilot-claude --models opus,sonnet
+pilot-codex --models astra,sol,luna   # All three
+pilot-codex --models astra,luna       # Skip Sol
+pilot-claude --models sonnet,haiku
 ```
 
-For a project default, add `"codexModels": ["astra", "sol"]` and/or `"claudeModels": ["sonnet", "haiku"]` to `.jev-pilot.json`. Launch `--models` takes precedence. Nonempty model scopes replace tier bounds; the most capable allowed model becomes the price baseline. Classification failures and automatic escalation stay within scope. A single-model scope still uses Jev to choose supported effort. [Details](docs/configuration.md#automatic-model-scope).
+Scope applies to automatic routing, including fallback. A recommendation for an excluded tier maps upward to an allowed model, or to the highest allowed model. With Astra + Luna, a Sol recommendation uses Astra. A single-model scope still calls Jev for supported effort and adds classifier overhead. Do not combine `--models` with native `--model`/`-m`.
 
-Scope applies to automatic routing; an explicit native manual model choice bypasses it. It is not an account spending cap. Do not combine launch `--models` with `--model`/`-m`.
-
-For one turn, append `Use Astra medium`, `아스트라 미디움으로 해`, `アストラ mediumでお願いします`, or `请用Astra medium`. Explicit trailing choices skip Jev, respect scope/effort limits, and return to automatic selection on the next substantive turn. Attached-image requests get a configurable strong/high floor because Jev receives image presence, not image pixels. [Prompt commands and visual policy](docs/configuration.md#choose-a-model-at-the-end-of-a-prompt).
-
-Manual choice: launching with `--model`/`-m` bypasses the proxy. Within a routed session, `/model` requests carrying a real model pass through; selecting Jev Pilot resumes automatic routing. This depends on CLI behavior; see the compatibility matrix.
-
-## Your local report
+For project defaults:
 
 ```sh
-jev-pilot report
+jev-pilot project init balanced
+```
+
+Then edit `.jev-pilot.json`, for example:
+
+```json
+{ "codexModels": ["astra", "sol"], "claudeModels": ["opus", "sonnet"], "maxEffort": "high" }
+```
+
+Launch scope overrides project scope. Nonempty scopes replace capability tier bounds; native manual model selection can bypass them. Settings load at launch, so restart Pilot to apply changes. [Scope and precedence](docs/configuration.md#automatic-model-scope).
+
+| Preset | Behavior |
+| --- | --- |
+| `balanced` | Default adaptive selection; effort capped at high |
+| `economy` | Capability capped at balanced, including difficult work |
+| `quality` | At least balanced capability; permits xhigh effort |
+| `shadow` | Records recommendations while retaining the default route |
+
+## Override a turn, or pause classification
+
+Append a supported command at the end of your request:
+
+| Language | Example |
+| --- | --- |
+| English | `Use Astra medium` |
+| 한국어 | `아스트라 미디움으로 해` |
+| 日本語 | `アストラ mediumでお願いします` |
+| 中文 | `请用Astra medium` |
+
+These commands are parsed locally, skip Jev for that turn and respect model scope and effort limits. The next substantive user turn returns to automatic routing. Matching is deterministic; every paraphrase is not supported. Default effort is capped at **high**; xhigh requires a higher configured ceiling and model support.
+
+Attached-image requests normally receive a configurable **strong/high floor** (Sol/high in the default Codex map), within your scope and effort ceiling. Jev receives image presence, not pixels; the original provider receives the image. This is a conservative heuristic, not a measured optimum. Explicit trailing model commands take precedence over the image floor. [Prompt commands and image policy](docs/configuration.md#choose-a-model-at-the-end-of-a-prompt).
+
+```sh
+pilot-codex --no-jev --models sol
+```
+
+This disables external classification for one run while keeping the proxy and local reporting active. Saved settings stay intact. It is not the same as running native Codex. Repeated classifier failures also pause new Jev calls temporarily; an optional per-run cap bounds attempts. [Availability and request limits](docs/configuration.md#classifier-availability-and-request-limits).
+
+## Inspect a report
+
+```sh
 jev-pilot report --open
 jev-pilot report --html report.html
 jev-pilot report --json summary.json
 jev-pilot report --markdown report.md --agent codex --since 2026-10-10
 ```
 
-Dates use UTC. Output files are created exclusively; existing files are preserved. HTML is a standalone offline dashboard with English/Korean/Japanese/Chinese text, model mix, token charts, automatic model scopes, an agent filter, timeline and JSON export. The filter updates every metric. `--open` saves an owner-only snapshot and opens it in your browser. GitHub displays HTML source rather than rendering it.
+The standalone HTML report works offline, with English/Korean/Japanese/Chinese text, tool filters, model and token breakdowns, routing history and JSON export. Dates use UTC. Output files do not overwrite existing files; `--open` creates an owner-only snapshot.
 
-| Observed metrics | Estimated metrics |
+| Observed | Estimated, only with sufficient data |
 | --- | --- |
-| Jev HTTP requests, successes and failures | API-equivalent model cost, if prices are configured |
-| Selected model and effort changes; routing reasons | Jev input-token cost, if its rate is configured |
-| Served model and usage coverage; incomplete requests | Difference against the configured maximum-tier model on the **same observed tokens** |
-| Cache-read share, route reuse, uncached input, cache writes and output | No subscription-quota or task-quality claim |
+| Classifier requests, failures and skips | API-equivalent model cost at configured prices |
+| Selected model/effort changes and provider-reported models | Jev input-token cost at a configured rate |
+| Token/cache usage, coverage and failed/interrupted responses | Difference against the most capable allowed model, on the **same observed tokens** |
+| Local user ratings of individual decisions | No subscription-quota or task-quality estimate |
 
-Missing prices/usage stay unavailable. Negative differences remain visible. [Configure prices and understand the baseline](docs/reporting.md).
+Missing prices or usage remain unavailable. Negative cost differences remain visible. Cache-read share and route reuse are useful observations, **not measured savings**. Response completion is separate from task correctness. [Calculation details](docs/reporting.md).
 
-Expand **Selection rules** to see recommendation → applied constraints → final choice and linked provider-reported models. **Rate this selection** reveals a command targeting that exact decision, even when several projects are running:
+Expand a routing decision to inspect recommendation → policy rules → final choice and linked served models. Copy its feedback command to rate that exact decision, including when several projects are running:
 
 ```sh
 jev-pilot feedback too-weak --decision <decision-id> --agent codex
-pilot-codex --no-jev --models sol  # observe one run without external classification
 ```
 
-The report only displays commands; it does not execute them or upload feedback. `--no-jev` leaves saved settings intact. [Failure handling and optional call limits](docs/configuration.md#classifier-availability-and-request-limits).
+Also accepts `right`, `too-strong`, `too-slow` and `rework`. Corrections replace the previous rating in aggregates. Omitting `--decision` targets the latest decision across all local projects for that tool. Feedback stays local, does not train routing automatically and is never executed by the report. [Feedback details](docs/reporting.md#inspect-a-decision-and-record-feedback).
 
-Try the interface without keys or calls:
+Try the report without a key or network calls, from a source checkout:
 
 ```sh
 npm run demo
 open examples/demo-report.html   # macOS; use your browser elsewhere
 ```
 
-**All demo data and rates are synthetic.**
+All demo activity and rates are synthetic. GitHub displays the HTML source rather than running it.
 
-## How routing works
+## How it works
 
 ```mermaid
 flowchart LR
-  A[Existing CLI login] --> B[Token-protected loopback proxy]
-  B -->|Bounded routing context| C[TypeSafe Jev]
+  A[Codex CLI / Claude Code] --> B[Local proxy]
+  B -->|Bounded recent text| C[TypeSafe Jev]
   C --> D[Capability + effort advice]
-  D --> E[Confidence, limits, cache policy]
-  E -->|Original subscription credential| F[Original provider]
-  F --> G[Local metadata ledger]
-  G --> H[HTML / JSON / Markdown report]
+  D --> E[Scope, confidence, image and cache rules]
+  E -->|Existing subscription login| F[Original provider]
+  F --> G[Local usage report]
 ```
 
-Defaults have four capability tiers, with `maxEffort: high`. Strong and frontier may share a model; effort is independently selected. Codex's local catalog limits supported effort and checks configured model IDs. The catalog is **not** proof of plan access. Claude capabilities currently use a configured allowlist. [Configuration](docs/configuration.md) · [Design](docs/design.md).
+New user turns are reconsidered; matching tool continuations retain their route. Short approvals inherit the current task. Warm-context downgrade holds can release after repeated confident lower-tier recommendations. If Jev fails, Pilot uses the current/default route within policy limits. Pilot does not add inference retries; the CLI may retry, and failed requests may still use allowance.
 
-Jev failures keep the current route, or the configured default at session start, subject to the attached-image floor. Confirmations such as “yes” or “응” inherit the current task. No automatic provider retry is performed by Pilot; your CLI may retry requests. Providers may charge for unsuccessful requests.
+Codex model IDs and supported effort are checked against its local catalog, which does not establish plan access. Claude uses configured model/effort capabilities. The default map has four capability tiers; some share a physical model. [Design](docs/design.md) · [Configuration](docs/configuration.md).
 
-For stable-model automatic effort selection, use `pilot-codex --models sol`. Long conversations can benefit from preserving a model's cache; compare actual work before choosing more frequent switches. The classifier considers ambiguity, visual judgement and requested completeness as well as difficulty. Default effort is capped at high; the quality preset permits xhigh. [Community findings and remaining evidence](docs/community-routing-research.ko.md).
+## Privacy and current limits
 
-Review the result and optionally record the latest decision with `jev-pilot feedback too-weak --agent codex` (also `right`, `too-strong`, `too-slow`, `rework`). The command prints its target timestamp/model; the target spans all local projects for that tool. Feedback stays local, does not auto-train routing, and appears separately from response completion in the report. [Details and limitations](docs/reporting.md#inspect-a-decision-and-record-feedback).
+- The launcher uses a token-protected random-port `127.0.0.1` proxy. Subscription requests go to the original provider; upstreams are fixed in code and redirects are refused.
+- TypeSafe receives bounded recent conversation text: by default up to 2,000 characters of the newest prompt, two short previous user turns and a short assistant response. Tool output, system instructions and files are not added. Recognized secrets are scrubbed, but sensitive text can still be sent. Use `--no-jev` when external classification is unsuitable.
+- Local logs store routing, usage and bounded diagnostic metadata, not raw prompts, tool output, credentials, account IDs or project paths. There is no automatic telemetry or report upload. Classifier/API keys are removed from the child environment. [Security policy](SECURITY.md).
+- Long Codex sessions have experienced stream interruptions. Fresh short successful checks do not resolve that failure. Resume, compaction, MCP behavior and multi-agent isolation need further live validation; routed context limits can differ from native CLI defaults. Windows is unverified. [Compatibility](docs/compatibility.md) · [Troubleshooting](docs/troubleshooting.md).
+- There is no controlled task-quality, token-saving or subscription-quota result yet. The [validation plan](docs/validation.md) keeps failures, retries and review work in the comparison.
 
-`npm run eval:routing` checks the authored multilingual case schema offline. Explicit `--live --out` evaluates only the classifier with paid Jev calls; it is not a task-quality or savings benchmark. [Evaluation plan](docs/validation.md#classifier-rubric-checks).
+## Contribute or remove
 
-## Privacy and credentials
+Useful contributions are reproducible installation failures, misrouted tasks described without private prompts, compatibility checks and paired task evaluations. Run `npm run verify`; offline checks use fake upstreams and need no keys. `npm run eval:routing` checks the authored case schema, not task quality. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [evaluation plan](docs/validation.md).
 
-- Requests and subscription credentials pass through a random-port `127.0.0.1` proxy to the original provider. Redirects are refused; upstreams are fixed in code.
-- TypeSafe receives up to 2,000 characters of the newest prompt, two short previous user turns and a short previous assistant response. Tool outputs, system instructions and files are not added. Code fences are summarized; recognized secrets are scrubbed. This is **not** a guarantee that sensitive text cannot be sent.
-- Logs contain routing metadata, random session/run identifiers, counts and usage. They contain no raw prompts, tool output, provider credentials, account IDs or project paths. Logs stay local and are never automatically uploaded.
-- Classifier and API keys are removed from the child environment. This project targets subscription sessions, not BYOK routing.
-
-See [SECURITY.md](SECURITY.md). Review before using on sensitive work.
-
-## Uninstall
+Share CLI versions and an inspected aggregate report in [Issues](https://github.com/sunu-dev/jev-pilot/issues). Keep keys, private prompts and raw session files out of public reports. Reports are opt-in; there is no central collection.
 
 ```sh
-jev-pilot uninstall
+npm uninstall --global @sunulab/jev-pilot   # npm installation
+# Or: jev-pilot uninstall                 # source launchers only
 ```
 
-Removes only source-install launchers still matching the installation manifest. Settings, external key files and local reports are kept. Delete `~/.config/jev-pilot` and `~/.local/share/jev-pilot` manually if you want to discard them. If you installed with npm, use `npm uninstall --global @sunulab/jev-pilot` instead.
+Removal preserves settings, external key files and reports. Remove `~/.config/jev-pilot` and `~/.local/share/jev-pilot` manually to discard local settings/data.
 
-## Contribute
-
-Run `npm run verify`. Tests use fake upstreams and require no keys. See [CONTRIBUTING.md](CONTRIBUTING.md) for useful reports, and [our evidence plan](docs/validation.md) for the benchmarks still needed. Please share an aggregate report and CLI versions, not private prompts or raw session files. Reports are opt-in; there is no central collection.
-
-Built by **sunulab**. Apache-2.0. Includes adapted parsing, secret detection and usage helpers from [Engin Diri's jev-router](https://github.com/dirien/jev-router); see [NOTICE](NOTICE). Independent of TypeSafe, OpenAI and Anthropic.
+Built by **sunulab**. Apache-2.0. Includes adapted helpers from [Engin Diri's jev-router](https://github.com/dirien/jev-router); see [NOTICE](NOTICE). Independent of TypeSafe, OpenAI and Anthropic.

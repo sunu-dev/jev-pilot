@@ -79,7 +79,8 @@ export function summarize(events, { agent, since, run, malformed = 0 } = {}) {
     schema: 1, runs: new Set(selected.map(e => e.run)).size, requests: requests.length, responses: responses.length,
     unfinished, jevUnfinished, malformed,
     period: { start: times[0] ?? null, end: times.at(-1) ?? null },
-    completed: inference.filter(e => e.completed).length, providerFailures: responses.filter(e => e.status >= 400 || e.error).length,
+    // Observed failures or interrupted inference responses do not establish which layer caused them.
+    completed: inference.filter(e => e.completed).length, providerFailures: responses.filter(e => e.status >= 400 || e.error || (e.reason !== 'count-tokens' && e.completed === false)).length,
     inferenceResponses: inference.length, tokenChecks: responses.length - inference.length, servedModelChanges,
     decisions: decisions.length, jevRequests,
     jevSkipped: selected.filter(e => e.event === 'jev_skipped').length,

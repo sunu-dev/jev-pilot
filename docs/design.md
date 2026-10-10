@@ -13,6 +13,10 @@ Each sub-agent thread is separated when Codex supplies a thread ID. Requests tha
 
 The ledger preserves the original Jev recommendation separately from the applied route and policy reason. Confidence, optional choice distributions and margins are diagnostics, not calibrated task-success probabilities. Voluntary feedback is linked locally to a decision and never changes routing automatically.
 
+The standalone report uses a restrained console layout: model/token observations precede cost estimates, and expandable full-width selection details show routing rules and local feedback commands. Desktop navigation becomes a compact header on smaller screens. Native controls, translated labels and visible column names keep the four-language report usable with keyboards and narrow screens. No remote assets or analytics are required.
+
+Stream diagnostics preserve upstream bytes while distinguishing provider terminal errors, incomplete responses, EOF, transport failures and cancellation. Bounded codes and validated provider request identifiers stay in the local ledger; raw messages and metadata blobs are discarded. See [troubleshooting](troubleshooting.md).
+
 No provider retries, cross-provider fallback, persistent routing state, CLI configuration edits, account synchronization or community report upload are performed. The proxy dies with the child. Failure of report storage does not stop inference.
 
 The cache heuristic uses the most recent reported input total and a configured idle interval. It does not predict true provider TTL, normalize cache identity between models, or claim effort changes are cache-free. The report exposes observed cache usage so these assumptions can be evaluated. A model chosen for a fresh simple task must be able to move down; an ongoing tool chain must keep one route.

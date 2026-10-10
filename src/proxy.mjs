@@ -9,6 +9,7 @@ import { chooseRoute, isConfirmation } from './policy.mjs';
 import { TIERS, scopedPolicy } from './config.mjs';
 import { trailingOverride } from './override.mjs';
 import { routingPolicySnapshot, classifierReceipt, routeStep } from './receipt.mjs';
+import { safeRequestId, requestCorrelation, transportDiagnostics } from './diagnostics.mjs';
 
 export const AUTO = 'jev-pilot';
 const HEADER = 'x-jev-pilot-token';
@@ -178,6 +179,7 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
     let body;
     try { body = JSON.parse(Buffer.concat(chunks)); if (!body || typeof body !== 'object' || !safeModel(body.model)) throw new Error(); } catch { return error(res, 400); }
     const request = randomUUID(), started = performance.now();
+    const correlation = requestCorrelation(body, req.headers, hash);
     const { route, session, state, rewrite, generation, sequence } = path.endsWith('count_tokens')
       ? { route: { model: body.model === AUTO ? models[policy.defaultTier].model : body.model, reason: 'count-tokens' }, session: hash('count-tokens'), state: {}, rewrite: body.model === AUTO }
       : await routeRequest(body, req, controller.signal);
@@ -187,12 +189,13 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
     if (agent === 'claude') body.tools?.forEach(t => normalizeSchema(t.input_schema));
     const headers = Object.fromEntries(Object.entries(req.headers).filter(([k, v]) => !HOP.has(k) && typeof v === 'string'));
     const url = agent === 'codex' ? 'https://chatgpt.com/backend-api/codex/responses' : `https://api.anthropic.com${path}`;
-    log({ event: 'request', request, session, decisionId: route.decisionId, model: safeModel(route.model), effort: route.effort ?? null, reason: route.reason });
-    let tap, status = 502, broken = false, firstByteMs = null, providerFirstByteMs = null;
+    log({ event: 'request', request, session, decisionId: route.decisionId, model: safeModel(route.model), effort: route.effort ?? null, reason: route.reason, ...correlation });
+    let tap, status = 502, broken = false, canceled = false, transport = {}, upstreamRequestId = null, firstByteMs = null, providerFirstByteMs = null;
     try {
       const providerStarted = performance.now();
       const upstream = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), redirect: 'error', signal: controller.signal });
       status = upstream.status;
+      upstreamRequestId = ['x-request-id', 'request-id', 'openai-request-id'].map(name => safeRequestId(upstream.headers.get(name))).find(Boolean) ?? null;
       const responseHeaders = Object.fromEntries([...upstream.headers].filter(([k]) => !HOP.has(k) && !['content-encoding', 'set-cookie'].includes(k)));
       // Some subscription streams omit Content-Type. The request explicitly declares SSE.
       responseHeaders['content-type'] ??= body.stream ? 'text/event-stream' : 'application/json';
@@ -209,12 +212,15 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
         });
       }
       res.end();
-    } catch { broken = true; error(res, status >= 400 ? status : 502); }
+    } catch (err) { broken = true; canceled = controller.signal.aborted; transport = transportDiagnostics(err); error(res, status >= 400 ? status : 502); }
     finally {
       const usage = tap?.result();
       // CLIs can close immediately after the terminal event instead of waiting for EOF.
-      const completed = status >= 200 && status < 300 && Boolean(tap?.completed);
+      const completed = status >= 200 && status < 300 && Boolean(tap?.completed) && !tap?.failure;
       const failed = !completed;
+      const streamEnd = completed ? 'completed' : status >= 400 ? (broken && !tap ? (canceled ? 'client-aborted' : 'transport-error') : 'http-error')
+        : tap?.failure ? (tap.failure.upstreamEvent === 'response.incomplete' ? 'provider-incomplete' : 'provider-error')
+        : broken ? (canceled ? 'client-aborted' : 'transport-error') : 'eof';
       // Only the latest started main request of this human turn may change routing state.
       // Responses still get logged when an older turn, duplicate or side call finishes late.
       if (main && generation === state.generation && sequence === state.latestMainSequence) {
@@ -222,8 +228,8 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
         state.failed = failed;
       }
       log({ event: 'response', request, session, decisionId: route.decisionId, status, model: safeModel(route.model), servedModel: safeModel(tap?.model), effort: route.effort ?? null,
-        completed, reason: route.reason, ms: Math.round(performance.now() - started), error: failed ? (broken ? 'stream-or-network' : status >= 400 ? 'provider-http' : 'incomplete-response') : null,
-        firstByteMs, providerFirstByteMs,
+        completed, reason: route.reason, ms: Math.round(performance.now() - started), error: failed ? (streamEnd === 'provider-error' ? 'provider-stream-error' : streamEnd === 'provider-incomplete' ? 'provider-incomplete' : streamEnd === 'client-aborted' ? 'client-aborted' : broken ? 'stream-or-network' : status >= 400 ? 'provider-http' : 'incomplete-response') : null,
+        firstByteMs, providerFirstByteMs, streamEnd, ...transport, ...tap?.failure, upstreamRequestId: upstreamRequestId ?? tap?.failure?.upstreamRequestId ?? null, ...correlation,
         usage: usage ?? null, cost: costOf(tap?.model, usage, prices) ?? null,
         baselineCost: costOf(models[policy.maxTier].model, usage, prices) ?? null });
     }

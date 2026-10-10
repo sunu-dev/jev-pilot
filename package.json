@@ -1,6 +1,6 @@
 {
   "name": "@sunulab/jev-pilot",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Local, observable Jev routing for Codex CLI and Claude Code subscription sessions.",
   "type": "module",
   "license": "Apache-2.0",

@@ -6,7 +6,8 @@ https://github.com/dirien/jev-router (@ediri/jev-router 1.6.0), Apache-2.0.
 vendor/dirien/messages.mjs, secrets.mjs and usage.mjs originate from that project.
 Modifications: messages.mjs also excludes Codex sub-agent notifications;
 secrets.mjs also detects Bearer credentials;
-usage.mjs detects successful completion separately from reported token usage.
+usage.mjs detects successful completion separately from reported token usage
+and extracts bounded failure diagnostics without storing provider messages.
 The new policy, proxy, launcher, ledger and reports are developed in this repository.
 
 Jev, TypeSafe, Codex and Claude are their respective owners' names.

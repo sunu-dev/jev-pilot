@@ -2,6 +2,7 @@ import { mkdirSync, openSync, writeSync, closeSync, readdirSync, readFileSync, s
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { dataHome } from './config.mjs';
+import { sanitizeDiagnostics } from './diagnostics.mjs';
 
 const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode', 'allowedModels',
   'decisionId', 'recommendedTier', 'recommendedEffort', 'effortConfidence', 'sensitive', 'riskConfidence', 'capabilityProbability', 'capabilityMargin', 'effortProbability', 'effortMargin', 'rubricVersion',
@@ -14,7 +15,7 @@ export function createLedger({ dir = join(dataHome(), 'logs'), agent, warn = () 
   let fd = openSync(path, 'wx', 0o600), bytes = 0, warned = false;
   const log = data => {
     if (fd === null) return;
-    const event = Object.fromEntries(Object.entries(data).filter(([k]) => FIELDS.has(k)));
+    const event = { ...Object.fromEntries(Object.entries(data).filter(([k]) => FIELDS.has(k))), ...sanitizeDiagnostics(data) };
     const line = JSON.stringify({ schema: 1, ts: now(), run, agent, ...event }) + '\n';
     try {
       if (bytes + Buffer.byteLength(line) > 50 * 1024 * 1024) throw new Error('log-limit');

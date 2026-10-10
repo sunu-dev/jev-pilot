@@ -1,5 +1,6 @@
 // Reads token usage out of an upstream response as it streams past, without changing a byte.
 // Understands Anthropic Messages (SSE and JSON) and OpenAI Responses (SSE and JSON).
+import { sanitizeDiagnostics, safeRequestId, requestIdInMessage } from '../../src/diagnostics.mjs';
 
 /** @import { Price, RawUsage, Usage } from './types.js' */
 
@@ -29,6 +30,7 @@ export class UsageTap {
     /** @type {string | undefined} */
     this.model = undefined;
     this.completed = false;
+    this.failure = null;
   }
 
   /**
@@ -70,7 +72,21 @@ export class UsageTap {
       this.completed = event.type === 'response.completed';
       this.model = event.response?.model;
       Object.assign(this.raw, event.response?.usage);
+      if (event.type === 'response.incomplete') this.#failure(event.type, { code: event.response?.incomplete_details?.reason }, event);
+    } else if (event.type === 'error' || event.type === 'response.failed') {
+      if (event.type === 'response.failed') {
+        this.model = event.response?.model;
+        Object.assign(this.raw, event.response?.usage);
+      }
+      this.#failure(event.type, event.response?.error ?? event.error ?? event, event);
     } else if (event.type === 'message_stop') this.completed = true;
+  }
+
+  #failure(type, error, event) {
+    if (this.failure) return;
+    this.failure = sanitizeDiagnostics({ upstreamEvent: type, upstreamErrorType: error?.type === 'error' ? null : error?.type,
+      upstreamErrorCode: error?.code,
+      upstreamRequestId: safeRequestId(event.request_id) ?? safeRequestId(event.response?.request_id) ?? safeRequestId(error?.request_id) ?? requestIdInMessage(error?.message) });
   }
 
   /**
@@ -86,6 +102,8 @@ export class UsageTap {
         this.model = body.model;
         this.completed = body.status === 'completed' || Boolean(body.stop_reason);
         Object.assign(this.raw, body.usage);
+        if (body.error || body.status === 'failed') this.#failure('error', body.error, body);
+        else if (body.status === 'incomplete') this.#failure('response.incomplete', { code: body.incomplete_details?.reason }, body);
       } catch {
         /* not JSON, or cut off */
       }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+- Stream diagnostics distinguish upstream SSE errors, explicit incomplete responses, unexpected EOF, transport failures and downstream cancellation. Only validated request identifiers and bounded error codes are recorded; provider messages, bodies and credentials are excluded. Native Codex turn metadata is parsed without logging its contents, and launch records include the runtime version.
+- HTTP 200 inference records with explicitly incomplete responses count as failed/interrupted, including older records that lack an error field.
+- Codex configuration options after `exec` or `resume` are normalized into one scope. This prevents native `-c` arguments from silently replacing Pilot's provider configuration in Codex 0.162.1.
+- A restrained console report with a desktop sidebar, readable model/token summaries, full-width selection details, responsive tables and translated accessibility labels. Synthetic preview and English/Korean setup guides updated.
+
+Fresh short subscription requests completed on native Codex and fixed-scope Pilot with Astra and Sol. Pilot checks verified matching provider-reported models. A repeated stream failure in an older long-running Codex process remains unresolved; this release adds diagnosis and fixes independently reproduced issues. It does not establish long-session reliability or measured task-quality, token or allowance savings. See [troubleshooting](docs/troubleshooting.md).
+
 ## 0.1.0-alpha.4
 
 - Run-wide classifier guard: three consecutive failures pause classification for 60 seconds; one recovery probe resumes it. Optional `jevMaxRequests` caps actual classifier attempts across concurrent sessions. Skips remain distinct from paid calls and failures.

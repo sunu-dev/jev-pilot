@@ -69,6 +69,21 @@ test('partial price coverage hides aggregate percentage', () => {
 test('unfinished requests remain visible after interruption', () => {
   assert.equal(summarize([e({ event: 'request', request: '1' })]).unfinished, 1);
 });
+test('HTTP 200 inference responses explicitly marked incomplete count as failures once', () => {
+  const s = summarize([
+    e({ event: 'response', status: 200, completed: false, error: null }),
+    e({ event: 'response', status: 500, completed: false, error: 'upstream-error' }),
+    e({ event: 'response', status: 200, completed: true, error: null })
+  ]);
+  assert.equal(s.providerFailures, 2); assert.equal(s.completed, 1);
+});
+test('successful token checks and missing or malformed completion flags do not imply failure', () => {
+  const responses = [undefined, null, 0, 'false'].map(completed => e({ event: 'response', status: 200, completed, error: null }));
+  responses.push(e({ event: 'response', reason: 'count-tokens', status: 200, completed: false, error: null }));
+  assert.equal(summarize(responses).providerFailures, 0);
+  responses.push(e({ event: 'response', reason: 'count-tokens', status: 500, completed: false, error: 'upstream-error' }));
+  assert.equal(summarize(responses).providerFailures, 1);
+});
 test('HTML escapes untrusted strings and has no remote assets', () => {
   const html = htmlReport(summarize([e({ event: 'response', servedModel: '</script><img src=x onerror=alert(1)>' })]));
   assert.ok(!html.includes('</script><img')); assert.ok(!html.includes('<script src=')); assert.ok(html.includes('\\u003c/script>'));
