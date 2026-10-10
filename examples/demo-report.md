@@ -4,41 +4,50 @@
 
 | Metric | Value |
 | --- | ---: |
-| Runs | 1 |
-| Provider requests | 12 |
-| Completed responses | 12 |
+| Runs | 2 |
+| Provider requests | 18 |
+| Completed responses | 18 |
 | Unfinished requests | 0 |
-| Jev requests | 7 |
-| Jev successes | 6 |
+| Jev requests | 9 |
+| Jev successes | 8 |
 | Jev failures | 1 |
 | Unfinished Jev requests | 0 |
-| Routing decisions | 7 |
-| Selected model changes | 3 |
-| Observed served model changes | 3 |
-| Selected effort changes | 2 |
+| Routing decisions | 9 |
+| Selected model changes | 4 |
+| Observed served model changes | 4 |
+| Selected effort changes | 3 |
 | Cache holds | 2 |
+| Cache-read share of reported input | 85.7% |
+| Route reuse share of automatic requests | 55.6% |
 | Token-count checks (excluded from price comparison) | 0 |
-| Jev input tokens (reported) | 1800 |
-| Jev output tokens (reported) | 36 |
-| Jev usage coverage | 6/7 |
+| Jev input tokens (reported) | 2300 |
+| Jev output tokens (reported) | 48 |
+| Jev usage coverage | 8/9 |
 | Provider failures | 0 |
-| Usage coverage | 12/12 |
-| Served model coverage | 12/12 |
-| Estimated model cost (priced subset) | $0.3000 |
-| Estimated Jev cost | $0.0006 |
-| Estimated baseline (priced subset) | $0.6000 |
-| Estimated net difference (complete coverage required) | $0.2994 |
-| Estimated difference % | 49.9% |
+| Usage coverage | 18/18 |
+| Served model coverage | 18/18 |
+| Estimated model cost (priced subset) | $0.3720 |
+| Estimated Jev cost | $0.0008 |
+| Estimated baseline (priced subset) | $0.7080 |
+| Estimated net difference (complete coverage required) | $0.3352 |
+| Estimated difference % | 47.3% |
 
 ## Reported tokens
 
-Input (uncached): 12000; cache reads: 108000; cache writes: 4000; output: 2400.
+Input (uncached): 16800; cache reads: 132000; cache writes: 5200; output: 3240.
 
 ## Models
 
-- gpt-example-strong: 6
-- gpt-example-balanced: 4
-- gpt-example-fast: 2
+- gpt-6-astra: 6
+- gpt-6.1-sol: 4
+- claude-sonnet-5-5: 3
+- claude-haiku-5-5: 3
+- gpt-6-luna: 2
+
+## Automatic model scopes
+
+- codex: gpt-6-astra, gpt-6-luna, gpt-6.1-sol (1 runs)
+- claude: claude-haiku-5-5, claude-sonnet-5-5 (1 runs)
 
 ## Interpretation
 

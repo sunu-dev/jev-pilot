@@ -28,6 +28,7 @@ The question is not just “which model?” It is **“did it switch, why did it
 - New user turns are reconsidered; tool continuations keep their route.
 - A warm, long conversation can hold a downgrade, but repeated confident cheap decisions release it. Sessions do not ratchet upward forever.
 - Local reports show Jev requests/failures, selected model and effort changes, served models, cache tokens and estimate coverage.
+- Choose exactly which models automatic routing may use, per launch or project. Reasoning effort remains independent.
 - Shadow mode records suggestions while keeping the session's default route.
 - No runtime dependencies, background daemon, account service or automatic telemetry.
 
@@ -82,25 +83,43 @@ Project initialization is optional. Plain `codex` and `claude` retain their norm
 
 Presets: `balanced` (default), `economy` (up to balanced capability), `quality` (at least balanced, up to xhigh effort), `shadow` (classify and report without applying advice). Economy limits capability even for difficult tasks; pick a suitable preset for your work.
 
+### Choose your automatic model scope
+
+```sh
+pilot-codex --models astra,sol       # Astra + Sol
+pilot-codex --models sol             # Sol only, variable effort
+pilot-codex --models luna            # Luna only
+pilot-codex --models astra,sol,luna   # all three
+pilot-codex --models astra,luna       # skip Sol
+pilot-claude --models opus,sonnet
+```
+
+For a project default, add `"codexModels": ["astra", "sol"]` and/or `"claudeModels": ["sonnet", "haiku"]` to `.jev-pilot.json`. Launch `--models` takes precedence. Nonempty model scopes replace tier bounds; the most capable allowed model becomes the price baseline. Classification failures and automatic escalation stay within scope. A single-model scope still uses Jev to choose supported effort. [Details](docs/configuration.md#automatic-model-scope).
+
+Scope applies to automatic routing; an explicit native manual model choice bypasses it. It is not an account spending cap. Do not combine launch `--models` with `--model`/`-m`.
+
+For one turn, append `Use Astra medium`, `아스트라 미디움으로 해`, `アストラ mediumでお願いします`, or `请用Astra medium`. Explicit trailing choices skip Jev, respect scope/effort limits, and return to automatic selection on the next substantive turn. Attached-image requests get a configurable strong/high floor because Jev receives image presence, not image pixels. [Prompt commands and visual policy](docs/configuration.md#choose-a-model-at-the-end-of-a-prompt).
+
 Manual choice: launching with `--model`/`-m` bypasses the proxy. Within a routed session, `/model` requests carrying a real model pass through; selecting Jev Pilot resumes automatic routing. This depends on CLI behavior; see the compatibility matrix.
 
 ## Your local report
 
 ```sh
 jev-pilot report
+jev-pilot report --open
 jev-pilot report --html report.html
 jev-pilot report --json summary.json
 jev-pilot report --markdown report.md --agent codex --since 2026-10-10
 ```
 
-Dates use UTC. Output files are created exclusively; existing files are preserved. HTML is a standalone offline file with an agent filter, timeline and JSON export. Open the generated file in a browser. GitHub displays HTML source rather than rendering it.
+Dates use UTC. Output files are created exclusively; existing files are preserved. HTML is a standalone offline dashboard with English/Korean/Japanese/Chinese text, model mix, token charts, automatic model scopes, an agent filter, timeline and JSON export. The filter updates every metric. `--open` saves an owner-only snapshot and opens it in your browser. GitHub displays HTML source rather than rendering it.
 
 | Observed metrics | Estimated metrics |
 | --- | --- |
 | Jev HTTP requests, successes and failures | API-equivalent model cost, if prices are configured |
 | Selected model and effort changes; routing reasons | Jev input-token cost, if its rate is configured |
 | Served model and usage coverage; incomplete requests | Difference against the configured maximum-tier model on the **same observed tokens** |
-| Uncached input, cache reads/writes and output | No subscription-quota or task-quality claim |
+| Cache-read share, route reuse, uncached input, cache writes and output | No subscription-quota or task-quality claim |
 
 Missing prices/usage stay unavailable. Negative differences remain visible. [Configure prices and understand the baseline](docs/reporting.md).
 
@@ -128,7 +147,7 @@ flowchart LR
 
 Defaults have four capability tiers, with `maxEffort: high`. Strong and frontier may share a model; effort is independently selected. Codex's local catalog limits supported effort and checks configured model IDs. The catalog is **not** proof of plan access. Claude capabilities currently use a configured allowlist. [Configuration](docs/configuration.md) · [Design](docs/design.md).
 
-Jev failures keep the current route, or the configured default at session start. Confirmations such as “yes” or “응” inherit the current task. No automatic provider retry is performed by Pilot; your CLI may retry requests. Providers may charge for unsuccessful requests.
+Jev failures keep the current route, or the configured default at session start, subject to the attached-image floor. Confirmations such as “yes” or “응” inherit the current task. No automatic provider retry is performed by Pilot; your CLI may retry requests. Providers may charge for unsuccessful requests.
 
 ## Privacy and credentials
 

@@ -30,3 +30,10 @@ test('long pasted prose keeps the final task instruction within the context limi
   const state = decisionState(body, humanTurns(body), 2000);
   assert.ok(state.request.length <= 2000); assert.ok(state.request.endsWith('Final task: rename the heading only.'));
 });
+
+test('classification sees image presence but never receives image pixels or paths', () => {
+  const body = { input: [{ role: 'user', content: [{ type: 'input_text', text: 'Improve this screen' }, { type: 'input_image', image_url: 'data:image/png;base64,PRIVATE_PIXELS' }] }] };
+  const state = decisionState(body, humanTurns(body), 2000);
+  assert.equal(state.attachments.image_count, 1); assert.equal(state.attachments.image_pixels_visible_to_classifier, false);
+  assert.ok(!JSON.stringify(state).includes('PRIVATE_PIXELS'));
+});

@@ -21,6 +21,7 @@ These probes show that classification can distinguish difficulty and that policy
 
 ## What is covered
 
+- Alpha.2 model scopes, multilingual trailing commands and image floors are covered by offline integration tests; the live model-access checks above were made for alpha.1 and do not independently establish long-session behavior of the new policies.
 - Offline integration tests use fake upstreams to check same-turn/tool continuation, parallel duplicate classification, manual model passthrough, shadow mode, secret holds, warm-context downgrades and independent effort selection.
 - Stream tests relay Korean UTF-8 split at every byte and handle subscription responses without a Content-Type header. HTTP 200 without a terminal completion is not accepted as success.
 - Installation/uninstall tests protect existing commands. Report tests preserve unknown/missing usage, incomplete requests and negative estimates.

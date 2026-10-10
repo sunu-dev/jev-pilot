@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { dataHome } from './config.mjs';
 
-const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode']);
+const FIELDS = new Set(['event', 'agent', 'session', 'request', 'reason', 'tier', 'model', 'servedModel', 'effort', 'fromModel', 'fromEffort', 'modelChanged', 'effortChanged', 'ok', 'status', 'ms', 'confidence', 'inputTokens', 'outputTokens', 'usage', 'cost', 'baselineCost', 'jevCost', 'completed', 'error', 'shadow', 'proposedModel', 'proposedEffort', 'mode', 'allowedModels']);
 export function createLedger({ dir = join(dataHome(), 'logs'), agent, warn = () => {} } = {}) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const run = randomUUID();

@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarize, htmlReport } from '../src/report.mjs';
+import { summarize, htmlReport, terminalReport } from '../src/report.mjs';
 import { createLedger, readLedger } from '../src/ledger.mjs';
 import { mkdtempSync, rmSync, readFileSync, statSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
 const base = { schema: 1, ts: '2026-10-10T12:00:00Z', run: 'fixture', agent: 'codex' };
 const e = data => ({ ...base, ...data });
 test('reports distinguish classifier calls, decisions, changes and provider requests', () => {
@@ -68,4 +69,37 @@ test('a selected model cannot masquerade as an observed served model', () => {
   const s = summarize([e({ event: 'response', model: 'gpt-example-selected' })]);
   assert.deepEqual(s.models, [['unknown', 1]]); assert.deepEqual(s.selectedModels, [['gpt-example-selected', 1]]);
   assert.equal(s.servedModelCoverage, 0);
+});
+
+test('efficiency ratios exclude manual, auxiliary and token-count traffic and keep empty denominators unknown', () => {
+  const requests = ['jev', 'continuation', 'tool-continuation', 'confirmation-hold', 'manual', 'auxiliary', 'count-tokens', 'tool-or-auxiliary'].map((reason, i) => e({ event: 'request', request: String(i), reason }));
+  const s = summarize([...requests, e({ event: 'response', usage: { input: 20, cacheRead: 70, cacheWrite: 10, output: 5 } }), e({ event: 'response', reason: 'count-tokens', usage: { input: 1000 } })]);
+  assert.equal(s.efficiency.cacheReadPercent, 70); assert.equal(s.efficiency.reusePercent, 75);
+  assert.equal(s.efficiency.automaticRequests, 4); assert.equal(s.efficiency.reusedRequests, 3);
+  const empty = summarize([]); assert.equal(empty.efficiency.reusePercent, null); assert.equal(empty.efficiency.cacheReadPercent, null);
+});
+test('unreadable records suppress the net estimate and a zero baseline has no percentage', () => {
+  const priced = e({ event: 'response', cost: 0, baselineCost: 0 });
+  assert.equal(summarize([priced]).estimates.percent, null);
+  const incomplete = summarize([e({ event: 'response', cost: 0.1, baselineCost: 1 })], { malformed: 1 });
+  assert.equal(incomplete.estimates.netDifference, null); assert.ok(incomplete.estimates.blockers.includes('malformed-records'));
+});
+test('model scopes aggregate per tool, preserve old unknown sessions, and do not depend on served model guesses', () => {
+  const events = [e({ event: 'session_start', allowedModels: ['gpt-6.1-sol', 'gpt-6-astra'] }), e({ event: 'session_start', run: 'second', allowedModels: ['gpt-6-astra', 'gpt-6.1-sol'] }), e({ event: 'session_start', run: 'old' }), e({ event: 'session_start', run: 'claude', agent: 'claude', allowedModels: ['claude-sonnet-5-5'] })];
+  const s = summarize(events, { agent: 'codex' }); assert.equal(s.runs, 3);
+  assert.deepEqual(s.modelScopes, [{ agent: 'codex', models: ['gpt-6-astra', 'gpt-6.1-sol'], runs: 2 }]);
+  const html = htmlReport(summarize(events), { byAgent: { codex: s } });
+  const data = JSON.parse(html.match(/<script id="report-data" type="application\/json">(.*?)<\/script>/s)[1]);
+  assert.equal(data.views.codex.runs, 3); assert.equal(data.views.all.runs, 4);
+});
+test('terminal report keeps unavailable estimates and removes model control characters', () => {
+  const s = summarize([e({ event: 'response', servedModel: 'gpt-evil\u001b[31m' })]);
+  const output = terminalReport(s); assert.ok(output.includes('Unavailable')); assert.ok(!output.includes('\u001b')); assert.ok(output.includes('report --open'));
+});
+
+test('English, Korean, Japanese and Chinese cover every dashboard string and routing reason', () => {
+  const source = readFileSync(new URL('../src/report-client.js', import.meta.url), 'utf8');
+  const prefix = source.slice(0, source.indexOf('let language ='));
+  const result = runInNewContext(prefix + `JSON.stringify(Object.fromEntries(['ko','ja','zh'].map(lang => [lang, { strings: Object.keys(copy.en).filter(k => !(k in copy[lang])), reasons: Object.keys(copy.en.reasons).filter(k => !(k in copy[lang].reasons)) }])))`, { document: { getElementById: () => ({ textContent: '{}' }) } });
+  assert.deepEqual(JSON.parse(result), { ko: { strings: [], reasons: [] }, ja: { strings: [], reasons: [] }, zh: { strings: [], reasons: [] } });
 });

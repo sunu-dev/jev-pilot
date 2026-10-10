@@ -1,26 +1,28 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { existsSync, writeFileSync, mkdirSync, symlinkSync, lstatSync, readlinkSync, unlinkSync, chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { loadConfig, loadKey, readCatalog, resolveModels, initGlobal, configHome, readJSON, dataHome } from './config.mjs';
+import { loadConfig, loadKey, readCatalog, resolveModels, scopedPolicy, activeModelIds, initGlobal, configHome, readJSON, dataHome } from './config.mjs';
 import { createProxy, AUTO } from './proxy.mjs';
 import { createLedger, readLedger } from './ledger.mjs';
-import { summarize, markdown, htmlReport } from './report.mjs';
+import { summarize, markdown, htmlReport, terminalReport } from './report.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const VERSION = '0.1.0-alpha.1';
+const VERSION = '0.1.0-alpha.2';
 const help = `Jev Pilot ${VERSION} · sunulab · experimental
 
 jev-pilot init [--key-file /absolute/path/outside/repo.txt]
 jev-pilot install [--prefix ~/.local]
 jev-pilot doctor
-jev-pilot codex [Codex arguments...]
-jev-pilot claude [Claude Code arguments...]
+jev-pilot codex [--models astra,sol,luna] [Codex arguments...]
+jev-pilot claude [--models opus,sonnet,haiku] [Claude Code arguments...]
 jev-pilot project init [balanced|economy|quality|shadow]
 jev-pilot verify [--live codex|claude|all] [--models]
 jev-pilot report [--from /path/to/logs] [--agent codex|claude]
                  [--since YYYY-MM-DD] [--html file | --json file | --markdown file]
+                 [--open]
 jev-pilot uninstall
 
 Aliases: pilot-codex, pilot-claude. Original CLI commands are unchanged.
@@ -28,6 +30,20 @@ No prompts or credentials are logged. TypeSafe receives bounded routing context.
 API-equivalent estimates are not subscription quota savings.
 `;
 const option = (args, name) => { const i = args.indexOf(name); if (i >= 0 && (!args[i + 1] || args[i + 1].startsWith('--'))) throw new Error(`${name} needs a value`); return i < 0 ? undefined : args[i + 1]; };
+export function takeModelScope(args) {
+  const remaining = []; let scope;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--') { remaining.push(...args.slice(i)); break; }
+    if (args[i] !== '--models' && !args[i].startsWith('--models=')) { remaining.push(args[i]); continue; }
+    if (scope) throw new Error('Specify --models only once');
+    const value = args[i] === '--models' ? args[++i] : args[i].slice(9);
+    if (!value || value.startsWith('-') || value.split(',').some(v => !v.trim())) throw new Error('--models requires a comma-separated list, for example astra,sol');
+    scope = value.split(',').map(v => v.trim());
+  }
+  const boundary = remaining.indexOf('--');
+  if (scope && remaining.slice(0, boundary < 0 ? remaining.length : boundary).some(a => ['--model', '-m'].includes(a) || a.startsWith('--model='))) throw new Error('--models selects automatic routing scope; choose either --models or a manual --model');
+  return { args: remaining, scope };
+}
 export function cleanEnv(input) {
   const env = { ...input };
   for (const k of ['TYPESAFE_API_KEY', 'JEV_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDECODE']) delete env[k];
@@ -57,9 +73,13 @@ export function agentCommand(agent, args, url, token, context) {
 }
 export async function runAgent(agent, args, { quiet = false, env = process.env, verification = false } = {}) {
   if (!['codex', 'claude'].includes(agent)) throw new Error('Expected codex or claude');
+  const parsed = takeModelScope(args); args = parsed.args;
   const config = loadConfig(projectDir(agent, args));
+  config.policy = scopedPolicy(config.policy, agent, parsed.scope);
   const executable = config.binaries[agent] || agent;
-  const direct = !config.policy.enabled || args.some(a => ['--model', '-m', '--help', '-h', '--version', 'login', 'logout', 'auth', 'mcp', 'completion'].includes(a) || a.startsWith('--model='));
+  const boundary = args.indexOf('--');
+  const nativeArgs = args.slice(0, boundary < 0 ? args.length : boundary);
+  const direct = !config.policy.enabled || nativeArgs.some(a => ['--model', '-m', '--help', '-h', '--version', 'login', 'logout', 'auth', 'mcp', 'completion'].includes(a) || a.startsWith('--model='));
   let proxy, ledger;
   let childArgs = args, childEnvironment = cleanEnv(env);
   if (!direct) {
@@ -68,14 +88,14 @@ export async function runAgent(agent, args, { quiet = false, env = process.env, 
     const models = resolveModels(config.policy, agent, catalog);
     const key = config.policy.sendToJev ? loadKey(config, env) : '';
     ledger = createLedger({ agent, dir: join(dataHome(), ...(verification ? ['verification'] : []), 'logs'), warn: message => console.error(`[Jev Pilot] ${message}`) });
-    ledger.log({ event: 'session_start', mode: config.policy.mode });
+    ledger.log({ event: 'session_start', mode: config.policy.mode, allowedModels: activeModelIds(config.policy, agent) });
     proxy = createProxy({ agent, ...config, models, catalog, key, log: ledger.log,
       notice: message => { if (!quiet) console.error(message); } });
     const url = await proxy.listen();
-    const command = agentCommand(agent, args, url, proxy.token, Math.min(...Object.values(models).map(m => m.context)));
+    const command = agentCommand(agent, args, url, proxy.token, Math.min(...Object.values(models).filter(m => m.allowed !== false).map(m => m.context)));
     childArgs = command.args;
     childEnvironment = { ...childEnvironment, ...command.env };
-    if (!quiet) console.error(`[Jev Pilot] ${agent} · ${config.policy.mode} · ${key ? 'Jev enabled' : 'no Jev key; default route'} · report ${ledger.path}`);
+    if (!quiet) console.error(`[Jev Pilot] ${agent} · ${config.policy.mode} · models ${activeModelIds(config.policy, agent).join(', ')} · ${key ? 'Jev enabled' : 'no Jev key; default route'} · report ${ledger.path}`);
   }
   let code;
   try {
@@ -192,13 +212,28 @@ export async function main(args = process.argv.slice(2)) {
     if (agent && !['codex', 'claude'].includes(agent)) throw new Error('Invalid --agent');
     if (since && !/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error('--since requires YYYY-MM-DD (UTC)');
     const { events, malformed } = readLedger(option(rest, '--from'));
-    const summary = summarize(events, { agent, since });
-    const format = ['html', 'json', 'markdown'].find(f => rest.includes('--' + f));
-    if (format) {
-      const file = resolve(option(rest, '--' + format));
-      writeFileSync(file, format === 'html' ? htmlReport(summary) : format === 'json' ? JSON.stringify(summary, null, 2) + '\n' : markdown(summary), { flag: 'wx', mode: 0o600 });
+    const summary = summarize(events, { agent, since, malformed });
+    const formats = ['html', 'json', 'markdown'].filter(f => rest.includes('--' + f));
+    if (formats.length > 1) throw new Error('Choose one report export format');
+    const open = rest.includes('--open'), format = formats[0];
+    if (open && format && format !== 'html') throw new Error('--open requires HTML or no export format');
+    if (format || open) {
+      let file;
+      if (format) file = resolve(option(rest, '--' + format));
+      else {
+        const dir = join(dataHome(), 'reports'); mkdirSync(dir, { recursive: true, mode: 0o700 });
+        file = join(dir, `report-${randomUUID()}.html`);
+      }
+      const byAgent = Object.fromEntries((agent ? [agent] : ['codex', 'claude']).map(a => [a, summarize(events, { agent: a, since, malformed })]));
+      writeFileSync(file, format === 'json' ? JSON.stringify(summary, null, 2) + '\n' : format === 'markdown' ? markdown(summary) : htmlReport(summary, { byAgent }), { flag: 'wx', mode: 0o600 });
       console.log(`Saved ${file}`);
-    } else console.log(markdown(summary));
+      if (open) {
+        const executable = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32.exe' : 'xdg-open';
+        const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', file] : [file];
+        const result = spawnSync(executable, args, { stdio: 'ignore', timeout: 15000 });
+        if (result.status !== 0) console.error('Could not open a browser automatically. Open the saved HTML file directly.');
+      }
+    } else console.log(terminalReport(summary, { color: Boolean(process.stdout.isTTY && !process.env.NO_COLOR) }));
     if (malformed) console.error(`Skipped ${malformed} malformed or truncated records.`);
     return 0;
   }

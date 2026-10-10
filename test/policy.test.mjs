@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { chooseRoute, isConfirmation } from '../src/policy.mjs';
-import { DEFAULTS, TIERS, validatePolicy } from '../src/config.mjs';
+import { DEFAULTS, TIERS, validatePolicy, scopedPolicy, resolveModels, activeModelIds } from '../src/config.mjs';
 const models = Object.fromEntries(TIERS.map(t => [t, { model: DEFAULTS.codex[t], efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }]));
 const a = (tier = 'fast', effort = 'low') => ({ ok: true, tier, effort, confidence: 0.99, effortConfidence: 0.99 });
 const call = extra => chooseRoute({ answer: a(), policy: DEFAULTS, models, ...extra });
@@ -48,4 +48,62 @@ test('classifier fallback still respects a low effort ceiling and Haiku capabili
 test('catalog effort ordering cannot silently select a lower depth', () => {
   const unordered = { ...models, balanced: { ...models.balanced, efforts: ['high', 'low', 'medium'] } };
   assert.equal(call({ answer: a('balanced', 'high'), models: unordered }).effort, 'high');
+});
+
+const catalog = [...new Set(Object.values(DEFAULTS.codex))].map(slug => ({ slug, supported_reasoning_levels: [{ effort: 'low' }, { effort: 'medium' }, { effort: 'high' }] }));
+function scoped(names, extra = {}) {
+  const policy = scopedPolicy({ ...DEFAULTS, ...extra }, 'codex', names);
+  return { policy, models: resolveModels(policy, 'codex', catalog) };
+}
+test('all requested model combinations remain closed across every classifier tier and failures', () => {
+  for (const names of [['astra', 'sol'], ['sol'], ['luna'], ['astra', 'sol', 'luna'], ['astra', 'luna']]) {
+    const config = scoped(names), permitted = activeModelIds(config.policy, 'codex');
+    for (const tier of TIERS) for (const flags of [{}, { sensitive: true }, { confidence: 0.1 }]) {
+      for (const failed of [false, true]) {
+        const r = call({ ...config, answer: { ...a(tier, 'high'), ...flags }, failed });
+        assert.ok(permitted.includes(r.model), `${names}: ${r.model}`);
+      }
+    }
+    assert.ok(permitted.includes(call({ ...config, answer: { ok: false } }).model));
+  }
+});
+test('noncontiguous scope never fills its gap with Sol, even when holding a stale route', () => {
+  const config = scoped(['astra', 'luna']);
+  assert.equal(call({ ...config, answer: a('balanced') }).model, DEFAULTS.codex.frontier);
+  const r = call({ ...config, answer: { ok: false }, current: { tier: 'balanced', model: DEFAULTS.codex.balanced, effort: 'high' } });
+  assert.equal(r.model, DEFAULTS.codex.frontier);
+});
+test('single-model scope still selects reasoning effort independently', () => {
+  const config = scoped(['sol']);
+  const low = call({ ...config, answer: a('fast', 'low') }), high = call({ ...config, answer: a('frontier', 'high') });
+  assert.equal(low.model, high.model); assert.equal(low.model, DEFAULTS.codex.balanced);
+  assert.equal(low.effort, 'low'); assert.equal(high.effort, 'high');
+});
+test('launch scope overrides project bounds and scope without mutating defaults', () => {
+  const policy = scopedPolicy({ ...DEFAULTS, minTier: 'balanced', codexModels: ['astra', 'sol'] }, 'codex', ['luna']);
+  assert.equal(policy.minTier, 'fast'); assert.equal(policy.maxTier, 'fast'); assert.equal(policy.defaultTier, 'fast');
+  assert.deepEqual(DEFAULTS.codexModels, []);
+  assert.deepEqual(scopedPolicy({ ...DEFAULTS, codexModels: ['astra', 'sol'] }, 'codex').codexModels, [DEFAULTS.codex.frontier, DEFAULTS.codex.balanced]);
+});
+test('missing excluded catalog models do not prevent a scoped launch', () => {
+  const policy = scopedPolicy(DEFAULTS, 'codex', ['sol']);
+  assert.equal(resolveModels(policy, 'codex', catalog.filter(m => m.slug === DEFAULTS.codex.balanced)).fast.allowed, false);
+  assert.throws(() => resolveModels(policy, 'codex', []), /absent/);
+});
+test('scope rejects misspellings and other provider models before classification', () => {
+  assert.throws(() => scoped(['astrra']), /Unknown codex/);
+  assert.throws(() => validatePolicy({ ...DEFAULTS, codexModels: 'sol' }), /expected an array/);
+  assert.throws(() => validatePolicy({ ...DEFAULTS, claudeModels: ['astra'] }), /Unknown claude/);
+  assert.deepEqual(scopedPolicy(DEFAULTS, 'claude', ['sonnet', 'haiku']).claudeModels, [DEFAULTS.claude.balanced, DEFAULTS.claude.fast]);
+});
+
+test('visual interpretation has a model/effort floor without escaping a restricted scope', () => {
+  const ordinary = call({ visual: true }); assert.equal(ordinary.model, DEFAULTS.codex.strong); assert.equal(ordinary.effort, 'high'); assert.equal(ordinary.reason, 'visual-context');
+  assert.equal(call({ visual: true, answer: { ok: false }, current: { tier: 'fast', model: models.fast.model, effort: 'low' } }).model, DEFAULTS.codex.strong);
+  const limited = call({ ...scoped(['luna']), visual: true }); assert.equal(limited.model, DEFAULTS.codex.fast);
+  assert.equal(call({ visual: true, policy: { ...DEFAULTS, maxEffort: 'low' } }).effort, 'low');
+});
+test('an explicit choice may lower a warm route immediately while normal automatic routing holds', () => {
+  const extra = { current: { tier: 'frontier', model: models.frontier.model, effort: 'high' }, warm: true, contextTokens: 50000 };
+  assert.equal(call(extra).tier, 'frontier'); assert.equal(call({ ...extra, forced: true }).tier, 'fast');
 });

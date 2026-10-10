@@ -18,6 +18,17 @@ Reports stay on the user's computer. There is no central database, telemetry, sh
 
 Uncached input, cache read, cache write and output are separate. OpenAI input totals include cached tokens; Anthropic's uncached input excludes its separate cache counters. The usage adapter normalizes these without subtracting cache tokens twice. Output tokens can include reasoning; this report cannot isolate all reasoning usage on every provider.
 
+## Read the visual dashboard
+
+`jev-pilot report` prints a compact terminal report. `jev-pilot report --open` writes a private HTML snapshot under the local data directory's `reports/` and opens it in your browser; `--html report.html` chooses the export path. Files never overwrite an existing export. No web service or external assets are required.
+
+The dashboard offers English/Korean/Japanese/Chinese, model and token composition, scope metadata, price/usage coverage, routing reasons and a JSON download of the selected tool's aggregates. Its tool filter updates all cards, charts and timeline. It is a snapshot: generate it again for later activity.
+
+- **Cache-read share:** reported cache-read tokens / (uncached input + cache reads + cache writes). This is observed input composition, not tokens avoided or quota savings. Missing usage can bias the observed ratio; usage coverage stays visible.
+- **Route reuse:** provider requests marked continuation, tool-continuation or confirmation-hold / eligible automatic provider requests. Manual, auxiliary, unclassified tool/auxiliary traffic and token-count checks are excluded. It describes reuse events, not a replayed estimate of paid Jev requests avoided.
+- Empty denominators stay unavailable. Malformed records or unfinished requests prevent aggregate net estimates. The dashboard shows a reason when data is incomplete.
+- Allowed automatic models come from session-start metadata. Old sessions remain unrecorded; their observed model mix is not used to guess a scope.
+
 ## Configure prices
 
 Edit `~/.config/jev-pilot/config.json`. Keep the existing `keyFile` and policy fields. Rates are **USD per million tokens**, not per token. Use current official rates for your exact models and record the date/source for your own comparison. No potentially stale public prices are bundled.
@@ -45,7 +56,8 @@ model estimate = (uncached input × input rate
                 + cache writes × cache-write rate
                 + output × output rate) / 1,000,000
 
-baseline = the SAME observed tokens priced as that session's configured maxTier model
+baseline = the SAME observed tokens priced as the highest allowed model
+           (configured maxTier when no model scope is set)
 net estimated difference = baseline − model estimate − estimated Jev cost
 ```
 
@@ -59,6 +71,6 @@ Local JSONL logs: `~/.local/share/jev-pilot/logs/`. Permissions are owner-only; 
 
 Live verification writes to `~/.local/share/jev-pilot/verification/logs/` instead, so smoke tests do not inflate your normal usage report. Inspect those separately with `jev-pilot report --from ~/.local/share/jev-pilot/verification/logs`.
 
-Use `jev-pilot report --json summary.json` to export an aggregate report. It includes model IDs and a decision timeline, so inspect before sharing. Malformed/truncated lines are counted and skipped with a warning. `--since` uses UTC dates. The HTML agent filter changes only the timeline; CLI filters change all aggregate metrics.
+Use `jev-pilot report --json summary.json` to export an aggregate report. It includes model IDs and a decision timeline, so inspect before sharing. Malformed/truncated lines are counted and skipped with a warning. `--since` uses UTC dates. Both the HTML tool filter and CLI filters change all aggregate metrics. The exported HTML includes embedded aggregates and a routing timeline; inspect before sharing.
 
 The demo files contain only synthetic fixtures and invented rates. Do not cite them as user savings.

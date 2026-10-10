@@ -6,7 +6,8 @@ import { findSecrets } from '../vendor/dirien/secrets.mjs';
 import { UsageTap, costOf } from '../vendor/dirien/usage.mjs';
 import { classify, decisionState } from './jev.mjs';
 import { chooseRoute, isConfirmation } from './policy.mjs';
-import { TIERS } from './config.mjs';
+import { TIERS, scopedPolicy } from './config.mjs';
+import { trailingOverride } from './override.mjs';
 
 export const AUTO = 'jev-pilot';
 const HEADER = 'x-jev-pilot-token';
@@ -50,7 +51,7 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
       if (sessions.size >= 1000) { for (const [id, old] of sessions) if (!old.flight) { sessions.delete(id); break; } }
       state = { streak: 0 }; sessions.set(session, state);
     }
-    const fallback = state.route ?? chooseRoute({ policy, models });
+    const fallback = state.route ?? chooseRoute({ policy, models, visual: latest?.images > 0 });
     const kind = req.headers['x-claude-code-request-class'] ?? req.headers['x-anthropic-request-kind'];
     if (body.model !== AUTO) return { session, route: { model: body.model, effort: body.reasoning?.effort ?? body.output_config?.effort ?? null, reason: 'manual' }, state, rewrite: false };
     if (kind && !['main', 'user'].includes(kind)) return { session, route: { ...fallback, reason: 'auxiliary' }, state, rewrite: true };
@@ -70,9 +71,20 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
     state.turn = turn;
     const run = async () => {
       let proposed;
-      if (isConfirmation(latest.text) && state.route) proposed = { ...state.route, reason: 'confirmation-hold', streak: 0 };
-      else if (findSecrets(latest.text).length) proposed = { ...fallback, reason: 'secret-not-sent', streak: 0 };
-      else if (!policy.sendToJev || !key) proposed = { ...fallback, reason: 'no-jev-key', streak: 0 };
+      const explicit = trailingOverride(latest.text);
+      if (explicit) {
+        try {
+          const requested = scopedPolicy(policy, agent, [explicit.model]);
+          const tier = requested.defaultTier;
+          proposed = chooseRoute({ policy, models, forced: true, answer: { ok: true, tier, effort: explicit.effort ?? 'medium', confidence: 1, effortConfidence: 1 } });
+          const limited = proposed.model !== requested[agent][tier] || (explicit.effort && proposed.effort !== explicit.effort);
+          proposed.reason = limited ? 'user-override-limited' : 'user-override';
+          if (limited) notice('[Jev Pilot] Requested model/effort was limited by the allowed models, effort ceiling or model capability.');
+        } catch { proposed = { ...fallback, reason: 'user-override-unavailable', streak: 0 }; notice('[Jev Pilot] Requested model is not configured for this tool; keeping the default/current route.'); }
+      }
+      else if (isConfirmation(latest.text) && state.route) proposed = { ...state.route, reason: 'confirmation-hold', streak: 0 };
+      else if (findSecrets(latest.text).length) proposed = { ...chooseRoute({ current: state.route, policy, models, visual: latest.images > 0 }), reason: 'secret-not-sent', streak: 0 };
+      else if (!policy.sendToJev || !key) proposed = { ...chooseRoute({ current: state.route, policy, models, visual: latest.images > 0 }), reason: 'no-jev-key', streak: 0 };
       else {
         let jevTokens;
         const answer = await decideImpl({ key, state: decisionState(body, turns, policy.requestChars), fetchImpl, signal,
@@ -84,6 +96,7 @@ export function createProxy({ agent, policy, models, catalog = [], key, log = ()
             } else log({ ...e, session });
           } });
         proposed = chooseRoute({ answer, current: state.route, policy, models, streak: state.streak, failed: state.failed,
+          visual: latest.images > 0,
           contextTokens: state.contextTokens ?? 0, warm: Date.now() - (state.lastDone ?? 0) < policy.cacheIdleMinutes * 60000 });
       }
       state.streak = proposed.streak ?? 0;
