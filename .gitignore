@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.jsonl
+!examples/demo.jsonl
+*.log
+coverage/
+*.tgz
+.DS_Store
+reports/
+.jev-pilot.local.json

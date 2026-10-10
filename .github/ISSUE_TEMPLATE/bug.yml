@@ -1,0 +1,30 @@
+name: Bug or compatibility problem
+description: Report installation, routing or report behavior without private data.
+body:
+  - type: markdown
+    attributes:
+      value: "Do not paste keys, auth files, prompts, raw transcripts or account identifiers. Aggregate reports are optional and should be inspected before sharing."
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: OS, Node, Jev Pilot and Codex/Claude version.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: Minimal non-sensitive reproduction and routing reason if applicable.
+    validations:
+      required: true
+  - type: dropdown
+    id: validation
+    attributes:
+      label: Checks performed
+      options:
+        - Offline tests only
+        - Live verify passed
+        - Live verify failed
+        - Real task independently reviewed
+        - Not checked
